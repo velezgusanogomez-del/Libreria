@@ -13,63 +13,50 @@ const valor = (sel) => {
 let editando = null; // {isbn, titulo, editorial, autor} cuando se edita un libro en Inventario
 let panelActivo = "panel";
 const cargado = { panel: false, inventario: false, historial: false };
-let pidiendoToken = false;
 let temporizadorSugerencias = null;
 
 /* ------------------------------ Toast (R3) ------------------------------ */
 function toast(mensaje, esError) {
   const el = $("#toast");
-  el.textContent = mensaje;
+  el.textContent = "";
+  el.append(icono(esError ? "alerta" : "check"), String(mensaje));
+  el.className = "toast";
+  void el.offsetWidth; // reinicia la animación si ya había un aviso visible
   el.className = "toast mostrar" + (esError ? " error" : "");
   clearTimeout(el._timer);
   el._timer = setTimeout(() => { el.className = "toast"; }, 4200);
 }
 
-/* ------------------------------ Token / API ------------------------------ */
-const TOKEN_KEY = "LIBRERO_TOKEN";
-function tokenGuardia() {
-  try { return localStorage.getItem(TOKEN_KEY); } catch { return null; }
-}
-function guardarToken(token) {
-  try { localStorage.setItem(TOKEN_KEY, token); } catch { /* sin localStorage */ }
+/* ------------------------------ Sesión / API ------------------------------ */
+/** Token CSRF que Spring Security deja en la cookie XSRF-TOKEN. */
+function tokenCsrf() {
+  const m = document.cookie.match(/(?:^|;\s*)XSRF-TOKEN=([^;]+)/);
+  return m ? decodeURIComponent(m[1]) : "";
 }
 
-/** R3: notifica al usuario con toast(...) y solicita el token cuando hace falta. */
-function manejarTokenInvalido() {
-  toast("Token de Librero requerido. Ingresa el token y recarga la página.", true);
-  if (pidiendoToken) return;
-  pidiendoToken = true;
-  setTimeout(() => {
-    const t = window.prompt("Ingresa el token de Librero (LIBRERO_TOKEN):");
-    if (t) {
-      guardarToken(t);
-      location.reload();
-    } else {
-      pidiendoToken = false;
-    }
-  }, 300);
-}
-
-function cabecerasConToken() {
-  const headers = {};
-  const token = tokenGuardia();
-  if (token) headers["X-Librero-Token"] = token;
-  return headers;
+/** Sesión vencida o inexistente: volver a la pantalla de inicio de sesión. */
+function irAlLogin() {
+  window.location.href = "/login.html";
 }
 
 async function api(url, opciones) {
   const config = opciones || {};
-  const headers = cabecerasConToken();
+  const metodo = config.method || "GET";
+  const headers = { Accept: "application/json" };
+  if (metodo !== "GET") headers["X-XSRF-TOKEN"] = tokenCsrf();
   let cuerpo = null;
   if (config.body !== undefined) {
     headers["Content-Type"] = "application/json";
     cuerpo = JSON.stringify(config.body);
   }
-  const res = await fetch(url, { method: config.method || "GET", headers, body: cuerpo });
-  const json = await res.json().catch(() => ({}));
+  const res = await fetch(url, { method: metodo, headers, body: cuerpo, credentials: "same-origin" });
   if (res.status === 401) {
-    manejarTokenInvalido();
-    throw new Error(json.error || "Token inválido o ausente.");
+    irAlLogin();
+    throw new Error("Sesión no iniciada.");
+  }
+  const json = await res.json().catch(() => ({}));
+  if (res.status === 403) {
+    throw new Error("La sesión cambió o expiró. Recarga la página e inténtalo de nuevo.");
   }
   if (!res.ok) {
     throw new Error(json.error || "Error HTTP " + res.status);
@@ -77,17 +64,78 @@ async function api(url, opciones) {
   return json;
 }
 
-/** R2: petición de texto (CSV) con token y manejo explícito de 401 / res.ok. */
+/** Petición de texto (CSV). */
 async function apiTexto(url) {
-  const res = await fetch(url, { headers: cabecerasConToken() });
+  const res = await fetch(url, { credentials: "same-origin" });
   if (res.status === 401) {
-    manejarTokenInvalido();
-    throw new Error("Token inválido o ausente.");
+    irAlLogin();
+    throw new Error("Sesión no iniciada.");
   }
   if (!res.ok) {
     throw new Error("Error HTTP " + res.status);
   }
   return res.text();
+}
+
+async function cerrarSesion() {
+  try {
+    await fetch("/logout", { method: "POST", headers: { "X-XSRF-TOKEN": tokenCsrf() }, credentials: "same-origin" });
+  } finally {
+    window.location.href = "/login.html?salir";
+  }
+}
+
+/** Crea un ícono SVG del sprite /img/iconos.svg. */
+function icono(nombre) {
+  const NS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("class", "icono");
+  svg.setAttribute("aria-hidden", "true");
+  const use = document.createElementNS(NS, "use");
+  use.setAttribute("href", "/img/iconos.svg#" + nombre);
+  svg.appendChild(use);
+  return svg;
+}
+
+/** "1 libro" / "3 libros". */
+function plural(n, uno, varios) {
+  return numero(n) + " " + (Number(n) === 1 ? uno : varios);
+}
+
+/** Fecha local de hoy en formato YYYY-MM-DD. */
+function hoy() {
+  const d = new Date();
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+}
+
+/** Pone la fecha de hoy en los campos de fecha vacíos de los formularios. */
+function fechasPorDefecto() {
+  for (const sel of ["#llegada-fecha", "#salida-fecha"]) {
+    const el = $(sel);
+    if (el && !el.value) el.value = hoy();
+  }
+}
+
+/** Ventana de confirmación propia (reemplaza a window.confirm). Devuelve una promesa booleana. */
+function confirmar(titulo, mensaje, textoAceptar) {
+  const dialogo = $("#dialogo-confirmar");
+  if (!dialogo || typeof dialogo.showModal !== "function") {
+    return Promise.resolve(window.confirm(titulo + "\n\n" + mensaje));
+  }
+  $("#dialogo-titulo").textContent = titulo;
+  $("#dialogo-mensaje").textContent = mensaje;
+  $("#dialogo-aceptar").textContent = textoAceptar || "Aceptar";
+  dialogo.returnValue = "";
+  dialogo.showModal();
+  return new Promise((resolver) => {
+    dialogo.addEventListener("close", () => resolver(dialogo.returnValue === "si"), { once: true });
+  });
+}
+
+/** Precio con 2 decimales, o "" si no tiene. */
+function precio(v) {
+  if (v === null || v === undefined || v === "") return "";
+  return "$" + Number(v).toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 /** UX2: deshabilita el botón mientras dura la petición. */
@@ -158,7 +206,7 @@ function celdaPill(texto, clase) {
 function filaVacia(texto) {
   const tr = document.createElement("tr");
   const td = celda(texto);
-  td.colSpan = 8;
+  td.colSpan = 9;
   td.className = "vacio";
   tr.appendChild(td);
   return tr;
@@ -204,7 +252,7 @@ function cargarPanelActivo() {
 
 function alCargar(id) {
   cargarSeccion(id).catch((err) => {
-    if (!/token/i.test(String(err.message))) toast("No se pudo cargar la sección: " + err.message, true);
+    if (!/Sesión no iniciada/.test(String(err.message))) toast("No se pudo cargar la sección: " + err.message, true);
   });
 }
 
@@ -307,6 +355,7 @@ $("#forma-llegada").addEventListener("submit", async (e) => {
       const r = await api("/api/llegada", { method: "POST", body: datos });
       toast(r.mensaje || "Llegada registrada.", false);
       $("#forma-llegada").reset();
+      fechasPorDefecto();
       invalidarDatos();
       await cargarPanelActivo();
     } catch (err) {
@@ -314,16 +363,47 @@ $("#forma-llegada").addEventListener("submit", async (e) => {
     }
   });
 });
-$("#llegada-limpiar").addEventListener("click", () => $("#forma-llegada").reset());
+$("#llegada-limpiar").addEventListener("click", () => {
+  $("#forma-llegada").reset();
+  $("#llegada-stock-info").textContent = "";
+  fechasPorDefecto();
+});
 
 /* ------------------------------ Registrar salida (UX1) ------------------------------ */
+let libroSalida = null;
+const TEXTO_DATOS_LIBRO = "Selecciona un libro para ver su título, editorial, stock y precio.";
+
+function reiniciarDatosLibro() {
+  $("#datos-libro").textContent = TEXTO_DATOS_LIBRO;
+  $("#datos-libro").classList.add("mutado");
+}
+
 async function buscarLibroSeleccionado(isbn) {
   if (!isbn) { toast("Escribe un ISBN para buscar el libro.", true); return null; }
   const r = await api("/api/inventario/" + encodeURIComponent(isbn));
   $("#salida-isbn").value = r.isbn; // M5: llena el ISBN del formulario de salida
-  $("#datos-libro").textContent =
-    "Libro: " + r.titulo + " | Editorial: " + r.editorial +
-    (r.autor ? " | Autor: " + r.autor : "") + " | Stock actual: " + r.stock_actual;
+  const caja = $("#datos-libro");
+  caja.textContent = "";
+  const titulo = document.createElement("div");
+  titulo.className = "datos-libro-titulo";
+  titulo.textContent = r.titulo;
+  const detalle = document.createElement("div");
+  detalle.className = "datos-libro-detalle";
+  detalle.textContent = r.editorial + (r.autor ? " · " + r.autor : "") + " · ISBN " + r.isbn;
+  const cifras = document.createElement("div");
+  cifras.className = "datos-libro-cifras";
+  const cifra = (texto, peligro) => {
+    const c = document.createElement("span");
+    c.className = "cifra" + (peligro ? " peligro" : "");
+    c.textContent = texto;
+    cifras.appendChild(c);
+  };
+  cifra("Stock: " + plural(r.stock_actual, "libro", "libros"), r.poco_stock);
+  cifra(r.precio_venta != null ? "Precio: " + precio(r.precio_venta) : "Sin precio");
+  caja.append(titulo, detalle, cifras);
+  caja.classList.remove("mutado");
+  libroSalida = r;
+  calcTotalVenta();
   return r;
 }
 
@@ -333,7 +413,7 @@ $("#btn-buscar-libro").addEventListener("click", async () => {
       await buscarLibroSeleccionado(valor("#salida-isbn"));
       limpiarSugerencias();
     } catch (err) {
-      $("#datos-libro").textContent = "";
+      reiniciarDatosLibro();
       toast("No se encontró ningún libro con ese ISBN. Regístrelo antes en \"Registrar llegada\".", true);
     }
   });
@@ -399,7 +479,10 @@ $("#forma-salida").addEventListener("submit", async (e) => {
       const r = await api("/api/salida", { method: "POST", body: datos });
       toast(r.mensaje || "Venta registrada.", false);
       $("#forma-salida").reset();
-      $("#datos-libro").textContent = "";
+      reiniciarDatosLibro();
+      fechasPorDefecto();
+      libroSalida = null;
+      calcTotalVenta();
       limpiarSugerencias();
       invalidarDatos();
       await cargarPanelActivo();
@@ -410,7 +493,10 @@ $("#forma-salida").addEventListener("submit", async (e) => {
 });
 $("#salida-limpiar").addEventListener("click", () => {
   $("#forma-salida").reset();
-  $("#datos-libro").textContent = "";
+  reiniciarDatosLibro();
+  fechasPorDefecto();
+  libroSalida = null;
+  calcTotalVenta();
   limpiarSugerencias();
 });
 
@@ -461,19 +547,29 @@ async function cargarTablaInventario() {
     }
     tr.append(
       celda(numero(libro.total_cajas)),
+      celda(precio(libro.precio_venta) || "-"),
       celda(libro.ultima_fecha_movimiento || "-")
     );
 
     const acciones = document.createElement("td");
     const btnEditar = document.createElement("button");
     btnEditar.className = "btn-link btn-pequeño";
-    btnEditar.textContent = "Editar";
+    btnEditar.classList.add("solo-icono");
+    btnEditar.title = "Editar";
+    btnEditar.setAttribute("aria-label", "Editar " + libro.titulo);
+    btnEditar.append(icono("editar"));
     btnEditar.addEventListener("click", () => iniciarEdicion(libro));
     const btnEliminar = document.createElement("button");
     btnEliminar.className = "btn-link btn-link-error btn-pequeño";
-    btnEliminar.textContent = "Eliminar";
+    btnEliminar.classList.add("solo-icono");
+    btnEliminar.title = "Eliminar";
+    btnEliminar.setAttribute("aria-label", "Eliminar " + libro.titulo);
+    btnEliminar.append(icono("eliminar"));
     btnEliminar.addEventListener("click", async () => {
-      if (!confirm("¿Eliminar el libro '" + libro.titulo + "' (ISBN " + libro.isbn + ")? El historial de movimientos se conserva.")) return;
+      const ok = await confirmar("¿Eliminar este libro?",
+        "“" + libro.titulo + "” (ISBN " + libro.isbn + ") dejará de aparecer en el inventario. El historial de movimientos se conserva.",
+        "Eliminar");
+      if (!ok) return;
       try {
         await api("/api/inventario/" + encodeURIComponent(libro.isbn), { method: "DELETE" });
         toast("Libro eliminado: " + libro.titulo, false);
@@ -496,14 +592,16 @@ function renderFilaEdicion(tr, libro) {
     '<td><input id="edit-titulo" type="text" value="' + escaparHtml(editando.titulo) + '"></td>' +
     '<td><input id="edit-editorial" type="text" value="' + escaparHtml(editando.editorial) + '"></td>' +
     '<td><input id="edit-autor" type="text" value="' + escaparHtml(editando.autor || "") + '"></td>' +
-    '<td colspan="5"><button type="button" id="edit-guardar" class="btn-principal btn-pequeño">Guardar</button> ' +
+    '<td colspan="2"></td>' +
+    '<td><input id="edit-precio" type="number" min="0" step="0.01" placeholder="Precio" value="' + escaparHtml(editando.precio_venta ?? "") + '"></td>' +
+    '<td colspan="2"><button type="button" id="edit-guardar" class="btn-principal btn-pequeño">Guardar</button> ' +
     '<button type="button" id="edit-cancelar" class="btn-secundario btn-pequeño">Cancelar</button></td>';
   tr.querySelector("#edit-guardar").addEventListener("click", () => guardarEdicion(tr.dataset.editarIsbn));
   tr.querySelector("#edit-cancelar").addEventListener("click", () => { editando = null; cargarPanelActivo(); });
 }
 
 function iniciarEdicion(libro) {
-  editando = { isbn: libro.isbn, titulo: libro.titulo, editorial: libro.editorial, autor: libro.autor || "" };
+  editando = { isbn: libro.isbn, titulo: libro.titulo, editorial: libro.editorial, autor: libro.autor || "", precio_venta: libro.precio_venta };
   cargarPanelActivo();
 }
 
@@ -513,6 +611,8 @@ async function guardarEdicion(isbn) {
     editorial: valor("#edit-editorial"),
     autor: valor("#edit-autor"),
   };
+  const nuevoPrecio = valor("#edit-precio");
+  if (nuevoPrecio !== "") datos.precio_venta = nuevoPrecio;
   try {
     const r = await api("/api/inventario/" + encodeURIComponent(isbn), { method: "PUT", body: datos });
     toast("Libro actualizado: " + r.titulo, false);
@@ -591,22 +691,27 @@ async function cargarPanel() {
   cards.innerHTML = "";
 
   const stats = [
-    { id: "total_libros_diferentes", label: "Total de libros diferentes registrados", clase: "destacado" },
-    { id: "total_stock", label: "Total de libros en stock (suma de todos)" },
-    { id: "total_cajas_arribados", label: "Total de cajas que han llegado" },
-    { id: "total_libros_vendidos", label: "Total de libros vendidos (suma de salidas)" },
-    { id: "libros_con_poco_stock", label: "Libros con poco stock", clase: "alerta" },
+    { id: "total_libros_diferentes", label: "Títulos registrados", icono: "logo" },
+    { id: "total_stock", label: "Libros en stock", icono: "inventario" },
+    { id: "total_cajas_arribados", label: "Cajas recibidas", icono: "caja", clase: "aviso" },
+    { id: "total_libros_vendidos", label: "Libros vendidos", icono: "vendidos", clase: "exito" },
+    { id: "libros_con_poco_stock", label: "Con poco stock", icono: "alerta", clase: "alerta" },
   ];
   for (const s of stats) {
     const val = Array.isArray(dash[s.id]) ? dash[s.id].length : dash[s.id];
     const card = document.createElement("div");
     card.className = "card" + (s.clase ? " " + s.clase : "");
+    const chip = document.createElement("span");
+    chip.className = "card-icono";
+    chip.appendChild(icono(s.icono));
+    const cuerpo = document.createElement("div");
     const h3 = document.createElement("h3");
     h3.textContent = s.label;
     const numeroEl = document.createElement("div");
     numeroEl.className = "numero";
     numeroEl.textContent = numero(val === undefined ? 0 : val);
-    card.append(h3, numeroEl);
+    cuerpo.append(h3, numeroEl);
+    card.append(chip, cuerpo);
     cards.appendChild(card);
   }
 
@@ -615,11 +720,14 @@ async function cargarPanel() {
   container.innerHTML = "";
   const lista = dash.libros_con_poco_stock || [];
   if (lista.length === 0) {
-    container.appendChild(celda("No hay libros con poco stock (umbral: " + (dash.umbral_poco_stock ?? 5) + " libros)."));
+    const vacio = document.createElement("p");
+    vacio.className = "mutado";
+    vacio.textContent = "Todo en orden: ningún libro tiene menos de " + (dash.umbral_poco_stock ?? 5) + " unidades.";
+    container.appendChild(vacio);
   } else {
     const tabla = document.createElement("table");
     tabla.className = "tabla mini-tabla";
-    tabla.innerHTML = "<thead><tr><th>ISBN</th><th>Título</th><th>Editorial</th><th>Stock actual</th></tr></thead>";
+    tabla.innerHTML = "<thead><tr><th>ISBN</th><th>Título</th><th>Editorial</th><th>Stock</th></tr></thead>";
     const tbody = document.createElement("tbody");
     for (const libro of lista) {
       const tr = document.createElement("tr");
@@ -670,8 +778,15 @@ function mostrarSeccion(id) {
 $all(".menu-btn").forEach((b) => b.addEventListener("click", () => mostrarSeccion(b.dataset.panel)));
 
 /* ------------------------------ Inicio ------------------------------ */
+$("#btn-cerrar-sesion").addEventListener("click", () => cerrarSesion());
+$("#btn-tema").addEventListener("click", () => window.LibreroTema && window.LibreroTema.alternar());
+$all("[data-ir]").forEach((b) => b.addEventListener("click", () => mostrarSeccion(b.dataset.ir)));
+fechasPorDefecto();
 api("/api/info")
-  .then((info) => { $("#ip-local").textContent = info.ip + ":" + info.port; })
+  .then((info) => {
+    $("#ip-local").textContent = info.ip + ":" + info.port;
+    if (info.usuario) $("#usuario-actual").textContent = info.usuario;
+  })
   .catch(() => {});
 
 // Solo se carga el panel inicial; el resto se carga al visitarlo (M10).
@@ -683,28 +798,54 @@ async function buscarFichaLibro() {
   if (!isbn) { toast("Escribe un ISBN.", true); return; }
   try {
     const r = await api("/api/libros/" + encodeURIComponent(isbn) + "/ficha");
-    const libro = r.libro, fichaResult = $("#ficha-resultado");
-    fichaResult.textContent = "";
-    fichaResult.append(document.createElement("div"));
-    const T = fichaResult;
-    const g = (v, d) => v ? String(v) : (d || "");
-    const h = (t2, txt) => { const d = document.createElement("div"); d.className = "ficha-fila"; const l = document.createElement("b"); l.textContent = t2; d.append(l, document.createTextNode(txt)); T.append(d); };
-    h("Título:", libro.titulo); h("Editorial:", libro.editorial); h("Autor:", libro.autor || "Sin autor registrado");
-    h("Stock actual:", libro.stock_actual + " libros"); h("Cajas totales:", libro.total_cajas + " cajas");
-    h("Precio de venta:", libro.precio_venta != null && libro.precio_venta !== "" ? String(libro.precio_venta) + " pesos" : "Sin precio registrado");
-    h("Última llegada:", (r.ultima_entrada ? (r.ultima_entrada.fecha + " | " + r.ultima_entrada.cantidad + " libros, " + (r.ultima_entrada.cajas || "0") + " cajas") : "Sin llegadas registradas"));
-    h("Última salida:", (r.ultima_salida ? (r.ultima_salida.fecha + " | " + r.ultima_salida.cantidad + " libros") : "Sin salidas registradas"));
-  } catch (err) { $("#ficha-resultado").textContent = err.message; }
+    const libro = r.libro;
+    const destino = $("#ficha-resultado");
+    destino.textContent = "";
+    const fila = (etiqueta, texto) => {
+      const d = document.createElement("div");
+      d.className = "ficha-fila";
+      const b = document.createElement("b");
+      b.textContent = etiqueta;
+      d.append(b, document.createTextNode(texto));
+      destino.append(d);
+    };
+    const entrada = r.ultima_entrada, salida = r.ultima_salida;
+    fila("Título", libro.titulo);
+    fila("ISBN", libro.isbn);
+    fila("Editorial", libro.editorial);
+    fila("Autor", libro.autor || "Sin autor registrado");
+    fila("Stock actual", plural(libro.stock_actual, "libro", "libros") + (libro.poco_stock ? " · poco stock" : ""));
+    fila("Cajas recibidas", plural(libro.total_cajas, "caja", "cajas"));
+    fila("Precio de venta", libro.precio_venta != null ? precio(libro.precio_venta) : "Sin precio registrado");
+    fila("Vendidos en total", plural(libro.vendidos_acumulados, "libro", "libros"));
+    fila("Última llegada", entrada ? entrada.fecha + " · " + plural(entrada.cantidad, "libro", "libros") + ", " + plural(entrada.cajas || 0, "caja", "cajas") : "Sin llegadas registradas");
+    fila("Última venta", salida ? salida.fecha + " · " + plural(salida.cantidad, "libro", "libros") : "Sin ventas registradas");
+  } catch (err) {
+    const destino = $("#ficha-resultado");
+    destino.textContent = "";
+    const aviso = document.createElement("div");
+    aviso.className = "ficha-error";
+    aviso.textContent = err.message;
+    destino.appendChild(aviso);
+  }
 }
 $("#ficha-buscar").addEventListener("click", () => buscarFichaLibro());
+$("#ficha-isbn").addEventListener("keydown", (e) => { if (e.key === "Enter") buscarFichaLibro(); });
 
-/* ------------------------------ Calculadora del total en salida ------------------------------ */
+/* ------------------------------ Total de la venta (salida) ------------------------------ */
 function calcTotalVenta() {
-  const precio = parseFloat($("#salida-precio-venta").value || "0");
+  const destino = $("#total-venta");
+  destino.classList.remove("neutro");
+  if (!libroSalida) { destino.textContent = ""; return; }
+  if (libroSalida.precio_venta == null) {
+    destino.textContent = "Este libro no tiene precio de venta registrado.";
+    destino.classList.add("neutro");
+    return;
+  }
   const cant = parseInt($("#salida-cantidad").value || "0", 10);
-  if (!precio) { $("#total-venta").textContent = "Este libro no tiene precio de venta registrado"; return; }
-  const total = precio * cant;
-  $("#total-venta").textContent = "Total: " + total.toFixed(2) + " pesos";
+  if (!cant || cant < 1) { destino.textContent = "Precio unitario: " + precio(libroSalida.precio_venta); return; }
+  // Cálculo en centavos para evitar errores de redondeo.
+  const centavos = Math.round(Number(libroSalida.precio_venta) * 100) * cant;
+  destino.textContent = "Total de la venta: " + precio(centavos / 100);
 }
-$("#btn-calcular-total").addEventListener("click", () => { $("#total-venta").textContent = ""; calcTotalVenta(); });
 $("#salida-cantidad").addEventListener("input", () => calcTotalVenta());

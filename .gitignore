@@ -1,0 +1,17 @@
+# Compilación
+target/
+
+# Datos reales de la librería (nunca al repositorio)
+base-de-datos/*.db
+base-de-datos/*.db-*
+base-de-datos/*.backup
+base-de-datos/*.respaldo*
+
+# Copias temporales y archivos de sistema / IDE
+*.backup
+.directory
+.DS_Store
+Thumbs.db
+.idea/
+*.iml
+.vscode/

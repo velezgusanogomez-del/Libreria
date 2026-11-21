@@ -1,264 +1,151 @@
 package com.librero.repositorio;
 
 import com.librero.modelo.Libro;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowMapper;
+import org.springframework.stereotype.Repository;
 
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.sql.Statement;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
+import java.util.Optional;
 
 /**
- * Repositorio de acceso a la tabla libros (SQLite) usando JDBC.
- *
- * - buscarPorIden: busca un libro por su ISBN.
- * - upsertLlegada: alta atómica de libro nuevo (INSERT) o suma de stock/cajas si el
- *   libro ya existe (UPDATE atómico), G1.
- * - decrementarStockYRegistrarVenta: resta stock atómicamente (sale), con UPDATE condicional
- *   y verifica executeUpdate() == 1 (G1).
- * - marcarInactivo: marca el libro como borrado lógico activo=0 (G6).
- * - sumarVendidosAcumulados: suma de ventas acumuladas que sobreviven al borrado (G6).
- * - sugerirLibros: consulta acotada (LIKE + LIMIT) para el autocompletado (OPT1).
- * - actualizar: actualiza textos de un libro (edición).
- * - listarFiltrado: excluye libros inactivos (G6); el panel reutiliza ese resultado (OPT2).
- *
- * G2: estos repositorios NO se sincronizan por instancia; el único punto de serialización
- * es LibreroServicer, que envuelve cada operación de negocio en su propio monitor.
+ * Acceso a la tabla {@code libros}. Todas las consultas usan parámetros (sin concatenar
+ * datos del usuario en el SQL). Las transacciones las delimita LibreroServicio.
  */
+@Repository
 public class LibroRepositorio {
 
-    private final Connection conexion;
+    private static final String COLUMNAS =
+            "isbn, titulo, editorial, autor, stock_actual, total_cajas, fecha_creacion, "
+                    + "activo, vendidos_acumulados, precio_venta_centavos";
 
-    public LibroRepositorio(Connection conexion) {
-        this.conexion = conexion;
+    private static final RowMapper<Libro> MAPEADOR = (rs, i) -> new Libro(
+            rs.getString("isbn"),
+            rs.getString("titulo"),
+            rs.getString("editorial"),
+            rs.getString("autor"),
+            rs.getInt("stock_actual"),
+            rs.getInt("total_cajas"),
+            rs.getString("fecha_creacion"),
+            rs.getInt("activo") == 1,
+            rs.getInt("vendidos_acumulados"),
+            rs.getObject("precio_venta_centavos") == null ? null : rs.getLong("precio_venta_centavos"));
+
+    private final JdbcTemplate jdbc;
+
+    public LibroRepositorio(JdbcTemplate jdbc) {
+        this.jdbc = jdbc;
     }
 
-    /** Busca un libro por su ISBN; devuelve null si no existe. */
-    public Libro buscarPorIden(String isbn) throws SQLException {
-        if (isbn == null || isbn.isBlank()) {
-            return null;
-        }
-        try (PreparedStatement ps = conexion.prepareStatement(
-                "SELECT isbn, titulo, editorial, autor, stock_actual, total_cajas, fecha_creacion, activo, vendidos_acumulados, precio_venta " +
-                        "FROM libros WHERE isbn = ?")) {
-            ps.setString(1, isbn);
-            try (ResultSet rs = ps.executeQuery()) {
-                if (rs.next()) {
-                    return mapear(rs);
-                }
-            }
-        }
-        return null;
-    }
-
-        /**
-     * Altas de llegada atómicas (G1):
-     * - Si el libro ya existe: suma stock_actual y total_cajas de forma atómica:
-     *   UPDATE libros SET stock_actual = stock_actual + ?, total_cajas = total_cajas + ? WHERE isbn = ?.
-     * - Si no existe: inserta el libro nuevo (INSERT con los datos de la llegada).
-     */
-    public void upsertLlegada(String isbn, String titulo, String editorial, String autor,
-                                            int stockEntrante, int cajasEntrantes, String fechaCreacion) throws SQLException {
-        // R1: llegada a un libro inactivo reactiva (activo=1) y actualiza campos solo
-        // si se enviaron (COALESCE mantiene el valor anterior si no se envió); suma stock/cajas.
-        String upd = "UPDATE libros SET activo = 1, stock_actual = stock_actual + ?, total_cajas = total_cajas + ?, "
-                + "titulo = COALESCE(?, titulo), editorial = COALESCE(?, editorial), autor = COALESCE(?, autor) "
-                + "WHERE isbn = ?";
-        try (PreparedStatement ps = conexion.prepareStatement(upd)) {
-            ps.setInt(1, stockEntrante);
-            ps.setInt(2, cajasEntrantes);
-            ps.setString(3, titulo);
-            ps.setString(4, editorial);
-            ps.setString(5, autor);
-            ps.setString(6, isbn);
-            if (ps.executeUpdate() == 1) {
-                return; // El libro existía (o era inactivo): reactivó, actualizó y sumó.
-            }
-        }
-        // El libro no existía: insertamos el nuevo (NOT NULL: isbn, titulo, editorial deben estar).
-        String ins = "INSERT INTO libros (isbn, titulo, editorial, autor, stock_actual, total_cajas, fecha_creacion) " +
-                "VALUES (?, ?, ?, ?, ?, ?, ?)";
-        try (PreparedStatement ps = conexion.prepareStatement(ins)) {
-            ps.setString(1, isbn);
-            ps.setString(2, titulo);
-            ps.setString(3, editorial);
-            ps.setString(4, autor);
-            ps.setInt(5, stockEntrante);
-            ps.setInt(6, cajasEntrantes);
-            ps.setString(7, fechaCreacion);
-            ps.executeUpdate();
-        }
+    /** Busca un libro (activo o no) por ISBN. */
+    public Optional<Libro> buscar(String isbn) {
+        return jdbc.query("SELECT " + COLUMNAS + " FROM libros WHERE isbn = ?", MAPEADOR, isbn)
+                .stream().findFirst();
     }
 
     /**
-     * Resta stock atómicamente (G1): UPDATE atómico con condición de stock suficiente:
-     *   UPDATE libros SET stock_actual = stock_actual - ?, vendidos_acumulados = vendidos_acumulados + ?
-     *   WHERE isbn = ? AND stock_actual >= ?
-     * Devuelve true si se actualizó (executeUpdate() == 1), false si no había suficiente stock.
+     * Suma una llegada a un libro existente (y lo reactiva si estaba eliminado).
+     * Los textos y el precio solo se cambian si vienen informados (COALESCE).
+     *
+     * @return true si el libro existía
      */
-    public boolean decrementarStockYRegistrarVenta(String isbn, int cantidad) throws SQLException {
-        String sql = "UPDATE libros SET stock_actual = stock_actual - ?, " +
-                "vendidos_acumulados = vendidos_acumulados + ? " +
-                "WHERE isbn = ? AND activo = 1 AND stock_actual >= ?";
-        try (PreparedStatement ps = conexion.prepareStatement(sql)) {
-            ps.setInt(1, cantidad);
-            ps.setInt(2, cantidad);
-            ps.setString(3, isbn);
-            ps.setInt(4, cantidad);
-            return ps.executeUpdate() == 1;
-        }
+    public boolean sumarLlegada(String isbn, String titulo, String editorial, String autor,
+                                int cantidad, int cajas, Long precioCentavos) {
+        return jdbc.update("""
+                UPDATE libros
+                   SET activo = 1,
+                       stock_actual = stock_actual + ?,
+                       total_cajas = total_cajas + ?,
+                       titulo = COALESCE(?, titulo),
+                       editorial = COALESCE(?, editorial),
+                       autor = COALESCE(?, autor),
+                       precio_venta_centavos = COALESCE(?, precio_venta_centavos)
+                 WHERE isbn = ?""",
+                cantidad, cajas, titulo, editorial, autor, precioCentavos, isbn) == 1;
+    }
+
+    public void insertar(String isbn, String titulo, String editorial, String autor,
+                         int cantidad, int cajas, String fechaCreacion, Long precioCentavos) {
+        jdbc.update("""
+                INSERT INTO libros (isbn, titulo, editorial, autor, stock_actual, total_cajas,
+                                    fecha_creacion, precio_venta_centavos)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                isbn, titulo, editorial, autor, cantidad, cajas, fechaCreacion, precioCentavos);
     }
 
     /**
-     * Actualiza un libro ya existente (textos de edición; activo mantiene 1).
+     * Resta stock de forma atómica, solo si alcanza (nunca queda negativo).
+     *
+     * @return true si se descontó; false si no había stock suficiente
      */
-    public void actualizar(Libro libro) throws SQLException {
-        String sql = "UPDATE libros SET titulo = ?, editorial = ?, autor = ?, stock_actual = ?, total_cajas = ? " +
-                "WHERE isbn = ?";
-        try (PreparedStatement ps = conexion.prepareStatement(sql)) {
-            ps.setString(1, libro.getTitulo());
-            ps.setString(2, libro.getEditorial());
-            ps.setString(3, libro.getAutor());
-            ps.setInt(4, libro.getStockActual());
-            ps.setInt(5, libro.getTotalCajas());
-            ps.setString(6, libro.getIsbn());
-            ps.executeUpdate();
-        }
+    public boolean descontarStock(String isbn, int cantidad) {
+        return jdbc.update("""
+                UPDATE libros
+                   SET stock_actual = stock_actual - ?,
+                       vendidos_acumulados = vendidos_acumulados + ?
+                 WHERE isbn = ? AND activo = 1 AND stock_actual >= ?""",
+                cantidad, cantidad, isbn, cantidad) == 1;
+    }
+
+    /** Actualiza los datos editables de un libro. */
+    public void actualizarDatos(String isbn, String titulo, String editorial, String autor, Long precioCentavos) {
+        jdbc.update("UPDATE libros SET titulo = ?, editorial = ?, autor = ?, precio_venta_centavos = ? WHERE isbn = ?",
+                titulo, editorial, autor, precioCentavos, isbn);
+    }
+
+    /** Borrado lógico: el libro deja de verse, pero sus movimientos y ventas se conservan. */
+    public void marcarInactivo(String isbn) {
+        jdbc.update("UPDATE libros SET activo = 0 WHERE isbn = ? AND activo = 1", isbn);
     }
 
     /**
-     * Borrado lógico (G6): marca el libro como inactivo (activo = 0).
-     * Los movimientos se conservan en movimientos (no se borran físicamente).
+     * Libros activos filtrados por ISBN / título / editorial ("contiene", sin distinguir
+     * mayúsculas). Orden "desc" = más stock primero; cualquier otro valor = menos stock primero.
      */
-    public void marcarInactivo(String isbn) throws SQLException {
-        String sql = "UPDATE libros SET activo = 0 WHERE isbn = ? AND activo = 1";
-        try (PreparedStatement ps = conexion.prepareStatement(sql)) {
-            ps.setString(1, isbn);
-            ps.executeUpdate();
-        }
-    }
-
-    /**
-     * Lista libros activos con filtros por ISBN, título y editorial (búsqueda "contiene", case-insensitive)
-     * y un orden: "desc" -> stock descendente (más stock primero); "asc" (o cualquier otro) ->
-     * primero los libros con menos stock. Solo libros activos (activo = 1).
-     */
-    public List<Libro> listarFiltrado(String filtroIsbn, String filtroTitulo,
-                                                   String filtroEditorial, String orden) throws SQLException {
-        StringBuilder sql = new StringBuilder(
-                "SELECT isbn, titulo, editorial, autor, stock_actual, total_cajas, fecha_creacion, activo, vendidos_acumulados " +
-                        "FROM libros WHERE activo = 1");
+    public List<Libro> listarActivos(String filtroIsbn, String filtroTitulo, String filtroEditorial, String orden) {
+        StringBuilder sql = new StringBuilder("SELECT " + COLUMNAS + " FROM libros WHERE activo = 1");
         List<Object> parametros = new ArrayList<>();
-
-        if (!esVacio(filtroIsbn)) {
-            sql.append(" AND isbn LIKE ?");
-            parametros.add("%" + filtroIsbn + "%");
-        }
-        if (!esVacio(filtroTitulo)) {
-            sql.append(" AND LOWER(titulo) LIKE ?");
-            parametros.add("%" + filtroTitulo.toLowerCase() + "%");
-        }
-        if (!esVacio(filtroEditorial)) {
-            sql.append(" AND LOWER(editorial) LIKE ?");
-            parametros.add("%" + filtroEditorial.toLowerCase() + "%");
-        }
-        if ("desc".equals(orden)) {
-            sql.append(" ORDER BY stock_actual DESC, isbn ASC");
-        } else {
-            sql.append(" ORDER BY stock_actual ASC, isbn ASC");
-        }
-
-        try (PreparedStatement ps = conexion.prepareStatement(sql.toString())) {
-            for (int i = 0; i < parametros.size(); i++) {
-                ps.setObject(i + 1, parametros.get(i));
-            }
-            List<Libro> resultado = new ArrayList<>();
-            try (ResultSet rs = ps.executeQuery()) {
-                while (rs.next()) {
-                    resultado.add(mapear(rs));
-                }
-            }
-            return resultado;
-        }
+        agregarFiltro(sql, parametros, "isbn", filtroIsbn);
+        agregarFiltro(sql, parametros, "titulo", filtroTitulo);
+        agregarFiltro(sql, parametros, "editorial", filtroEditorial);
+        sql.append("desc".equalsIgnoreCase(orden)
+                ? " ORDER BY stock_actual DESC, isbn ASC"
+                : " ORDER BY stock_actual ASC, isbn ASC");
+        return jdbc.query(sql.toString(), MAPEADOR, parametros.toArray());
     }
 
-    /**
-     * Suma de las ventas acumuladas sobrevivientes al borrado (G6): se suma en
-     * decrementarStockYRegistrarVenta, se conserva al marcarInactivo, y se mantiene
-     * fija en la BD al eliminar el libro.
-     */
-    public int sumarVendidosAcumulados() throws SQLException {
-        try (Statement st = conexion.createStatement();
-             ResultSet rs = st.executeQuery("SELECT COALESCE(SUM(vendidos_acumulados), 0) FROM libros")) {
-            rs.next();
-            return rs.getInt(1);
-        }
-    }
-
-    /**
-     * OPT1: sugerencias para el autocompletado con consulta acotada (LIKE + LIMIT).
-     * Devuelve únicamente isbn, titulo y editorial de libros activos.
-     */
-    public List<Map<String, Object>> sugerirLibros(String consulta, int limite) throws SQLException {
+    /** Autocompletado: búsqueda acotada por ISBN, título o editorial. */
+    public List<Libro> sugerir(String consulta, int limite) {
         String q = consulta == null ? "" : consulta.trim();
-        String patron = "%" + q.toLowerCase() + "%";
-        String sql = "SELECT rowid, isbn, titulo, editorial, autor, stock_actual FROM libros WHERE activo = 1";
-        if (!q.isEmpty()) {
-            sql += " AND (isbn LIKE ? OR LOWER(titulo) LIKE ? OR LOWER(editorial) LIKE ?)";
+        if (q.isEmpty()) {
+            return jdbc.query("SELECT " + COLUMNAS + " FROM libros WHERE activo = 1 "
+                    + "ORDER BY titulo ASC, isbn ASC LIMIT ?", MAPEADOR, limite);
         }
-        sql += " ORDER BY titulo ASC, isbn ASC LIMIT ?";
-        try (PreparedStatement ps = conexion.prepareStatement(sql)) {
-            if (!q.isEmpty()) {
-                ps.setString(1, patron);
-                ps.setString(2, patron);
-                ps.setString(3, patron);
-                ps.setInt(4, limite);
-            } else {
-                ps.setInt(1, limite);
-            }
-            List<Map<String, Object>> resultado = new ArrayList<>();
-            try (ResultSet rs = ps.executeQuery()) {
-                while (rs.next()) {
-                    Map<String, Object> fila = new LinkedHashMap<>();
-                    fila.put("id", rs.getLong("rowid"));
-                    fila.put("isbn", rs.getString("isbn"));
-                    fila.put("titulo", rs.getString("titulo"));
-                    fila.put("editorial", rs.getString("editorial"));
-                    fila.put("autor", rs.getString("autor"));
-                    fila.put("stock_actual", rs.getInt("stock_actual"));
-                    resultado.add(fila);
-                }
-            }
-            return resultado;
+        String patron = patronLike(q);
+        return jdbc.query("SELECT " + COLUMNAS + " FROM libros WHERE activo = 1 "
+                        + "AND (isbn LIKE ? ESCAPE '\\' OR titulo LIKE ? ESCAPE '\\' OR editorial LIKE ? ESCAPE '\\') "
+                        + "ORDER BY titulo ASC, isbn ASC LIMIT ?",
+                MAPEADOR, patron, patron, patron, limite);
+    }
+
+    /** Total de libros vendidos, incluidos los de libros eliminados. */
+    public long sumarVendidos() {
+        Long total = jdbc.queryForObject("SELECT COALESCE(SUM(vendidos_acumulados), 0) FROM libros", Long.class);
+        return total == null ? 0 : total;
+    }
+
+    private static void agregarFiltro(StringBuilder sql, List<Object> parametros, String columna, String valor) {
+        if (valor != null && !valor.isBlank()) {
+            // LIKE de SQLite ya ignora mayúsculas/minúsculas en letras ASCII.
+            sql.append(" AND ").append(columna).append(" LIKE ? ESCAPE '\\'");
+            parametros.add(patronLike(valor.trim()));
         }
     }
 
-    private Libro mapear(ResultSet rs) throws SQLException {
-        Libro libro = new Libro();
-        libro.setIsbn(rs.getString("isbn"));
-        libro.setTitulo(rs.getString("titulo"));
-        libro.setEditorial(rs.getString("editorial"));
-        libro.setAutor(rs.getString("autor"));
-        libro.setStockActual(rs.getInt("stock_actual"));
-        libro.setTotalCajas(rs.getInt("total_cajas"));
-        libro.setFechaCreacion(rs.getString("fecha_creacion"));
-        libro.setPrecioVenta(rs.getObject("precio_venta", java.lang.Double.class));
-        libro.setActivo(rs.getInt("activo"));
-        libro.setVendidosAcumulados(rs.getInt("vendidos_acumulados"));
-        return libro;
-    }
-
-    private boolean esVacio(String valor) {
-        return valor == null || valor.isBlank();
+    /** "%texto%" escapando los comodines % y _ que escriba el usuario. */
+    private static String patronLike(String texto) {
+        String escapado = texto.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
+        return "%" + escapado + "%";
     }
 }
-
-    public synchronized void actualizarPrecioVenta(String isbn, Double precioVenta) throws SQLException {
-        try (PreparedStatement ps = conexion.prepareStatement("UPDATE libros SET precio_venta = ? WHERE isbn = ?")) {
-            ps.setDouble(1, precioVenta); ps.setString(2, isbn); ps.executeUpdate();
-        }
-    }

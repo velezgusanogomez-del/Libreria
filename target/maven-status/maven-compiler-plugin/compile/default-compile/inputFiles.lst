@@ -1,9 +1,0 @@
-/home/arch_gv/Desktop/Librero/src/main/java/com/librero/LibreroApplication.java
-/home/arch_gv/Desktop/Librero/src/main/java/com/librero/controlador/LibreroControlador.java
-/home/arch_gv/Desktop/Librero/src/main/java/com/librero/modelo/Libro.java
-/home/arch_gv/Desktop/Librero/src/main/java/com/librero/modelo/Movimiento.java
-/home/arch_gv/Desktop/Librero/src/main/java/com/librero/repositorio/LibroRepositorio.java
-/home/arch_gv/Desktop/Librero/src/main/java/com/librero/repositorio/MovimientoRepositorio.java
-/home/arch_gv/Desktop/Librero/src/main/java/com/librero/servicio/ErrorInternoExcepcion.java
-/home/arch_gv/Desktop/Librero/src/main/java/com/librero/servicio/LibreroServicer.java
-/home/arch_gv/Desktop/Librero/src/main/java/com/librero/servicio/ServicioExcepcion.java
