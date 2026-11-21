@@ -13,7 +13,6 @@ const valor = (sel) => {
 let editando = null; // {isbn, titulo, editorial, autor} cuando se edita un libro en Inventario
 let panelActivo = "panel";
 const cargado = { panel: false, inventario: false, historial: false };
-let pidiendoToken = false;
 let temporizadorSugerencias = null;
 
 /* ------------------------------ Toast (R3) ------------------------------ */
@@ -25,51 +24,36 @@ function toast(mensaje, esError) {
   el._timer = setTimeout(() => { el.className = "toast"; }, 4200);
 }
 
-/* ------------------------------ Token / API ------------------------------ */
-const TOKEN_KEY = "LIBRERO_TOKEN";
-function tokenGuardia() {
-  try { return localStorage.getItem(TOKEN_KEY); } catch { return null; }
-}
-function guardarToken(token) {
-  try { localStorage.setItem(TOKEN_KEY, token); } catch { /* sin localStorage */ }
+/* ------------------------------ Sesión / API ------------------------------ */
+/** Token CSRF que Spring Security deja en la cookie XSRF-TOKEN. */
+function tokenCsrf() {
+  const m = document.cookie.match(/(?:^|;\s*)XSRF-TOKEN=([^;]+)/);
+  return m ? decodeURIComponent(m[1]) : "";
 }
 
-/** R3: notifica al usuario con toast(...) y solicita el token cuando hace falta. */
-function manejarTokenInvalido() {
-  toast("Token de Librero requerido. Ingresa el token y recarga la página.", true);
-  if (pidiendoToken) return;
-  pidiendoToken = true;
-  setTimeout(() => {
-    const t = window.prompt("Ingresa el token de Librero (LIBRERO_TOKEN):");
-    if (t) {
-      guardarToken(t);
-      location.reload();
-    } else {
-      pidiendoToken = false;
-    }
-  }, 300);
-}
-
-function cabecerasConToken() {
-  const headers = {};
-  const token = tokenGuardia();
-  if (token) headers["X-Librero-Token"] = token;
-  return headers;
+/** Sesión vencida o inexistente: volver a la pantalla de inicio de sesión. */
+function irAlLogin() {
+  window.location.href = "/login.html";
 }
 
 async function api(url, opciones) {
   const config = opciones || {};
-  const headers = cabecerasConToken();
+  const metodo = config.method || "GET";
+  const headers = { Accept: "application/json" };
+  if (metodo !== "GET") headers["X-XSRF-TOKEN"] = tokenCsrf();
   let cuerpo = null;
   if (config.body !== undefined) {
     headers["Content-Type"] = "application/json";
     cuerpo = JSON.stringify(config.body);
   }
-  const res = await fetch(url, { method: config.method || "GET", headers, body: cuerpo });
-  const json = await res.json().catch(() => ({}));
+  const res = await fetch(url, { method: metodo, headers, body: cuerpo, credentials: "same-origin" });
   if (res.status === 401) {
-    manejarTokenInvalido();
-    throw new Error(json.error || "Token inválido o ausente.");
+    irAlLogin();
+    throw new Error("Sesión no iniciada.");
+  }
+  const json = await res.json().catch(() => ({}));
+  if (res.status === 403) {
+    throw new Error("La sesión cambió o expiró. Recarga la página e inténtalo de nuevo.");
   }
   if (!res.ok) {
     throw new Error(json.error || "Error HTTP " + res.status);
@@ -77,17 +61,31 @@ async function api(url, opciones) {
   return json;
 }
 
-/** R2: petición de texto (CSV) con token y manejo explícito de 401 / res.ok. */
+/** Petición de texto (CSV). */
 async function apiTexto(url) {
-  const res = await fetch(url, { headers: cabecerasConToken() });
+  const res = await fetch(url, { credentials: "same-origin" });
   if (res.status === 401) {
-    manejarTokenInvalido();
-    throw new Error("Token inválido o ausente.");
+    irAlLogin();
+    throw new Error("Sesión no iniciada.");
   }
   if (!res.ok) {
     throw new Error("Error HTTP " + res.status);
   }
   return res.text();
+}
+
+async function cerrarSesion() {
+  try {
+    await fetch("/logout", { method: "POST", headers: { "X-XSRF-TOKEN": tokenCsrf() }, credentials: "same-origin" });
+  } finally {
+    window.location.href = "/login.html?salir";
+  }
+}
+
+/** Precio con 2 decimales, o "" si no tiene. */
+function precio(v) {
+  if (v === null || v === undefined || v === "") return "";
+  return "$" + Number(v).toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 /** UX2: deshabilita el botón mientras dura la petición. */
@@ -158,7 +156,7 @@ function celdaPill(texto, clase) {
 function filaVacia(texto) {
   const tr = document.createElement("tr");
   const td = celda(texto);
-  td.colSpan = 8;
+  td.colSpan = 9;
   td.className = "vacio";
   tr.appendChild(td);
   return tr;
@@ -204,7 +202,7 @@ function cargarPanelActivo() {
 
 function alCargar(id) {
   cargarSeccion(id).catch((err) => {
-    if (!/token/i.test(String(err.message))) toast("No se pudo cargar la sección: " + err.message, true);
+    if (!/Sesión no iniciada/.test(String(err.message))) toast("No se pudo cargar la sección: " + err.message, true);
   });
 }
 
@@ -317,13 +315,18 @@ $("#forma-llegada").addEventListener("submit", async (e) => {
 $("#llegada-limpiar").addEventListener("click", () => $("#forma-llegada").reset());
 
 /* ------------------------------ Registrar salida (UX1) ------------------------------ */
+let libroSalida = null;
+
 async function buscarLibroSeleccionado(isbn) {
   if (!isbn) { toast("Escribe un ISBN para buscar el libro.", true); return null; }
   const r = await api("/api/inventario/" + encodeURIComponent(isbn));
   $("#salida-isbn").value = r.isbn; // M5: llena el ISBN del formulario de salida
   $("#datos-libro").textContent =
     "Libro: " + r.titulo + " | Editorial: " + r.editorial +
-    (r.autor ? " | Autor: " + r.autor : "") + " | Stock actual: " + r.stock_actual;
+    (r.autor ? " | Autor: " + r.autor : "") + " | Stock actual: " + r.stock_actual +
+    (r.precio_venta != null ? " | Precio: " + precio(r.precio_venta) : "");
+  libroSalida = r;
+  calcTotalVenta();
   return r;
 }
 
@@ -400,6 +403,8 @@ $("#forma-salida").addEventListener("submit", async (e) => {
       toast(r.mensaje || "Venta registrada.", false);
       $("#forma-salida").reset();
       $("#datos-libro").textContent = "";
+      libroSalida = null;
+      calcTotalVenta();
       limpiarSugerencias();
       invalidarDatos();
       await cargarPanelActivo();
@@ -411,6 +416,8 @@ $("#forma-salida").addEventListener("submit", async (e) => {
 $("#salida-limpiar").addEventListener("click", () => {
   $("#forma-salida").reset();
   $("#datos-libro").textContent = "";
+  libroSalida = null;
+  calcTotalVenta();
   limpiarSugerencias();
 });
 
@@ -461,6 +468,7 @@ async function cargarTablaInventario() {
     }
     tr.append(
       celda(numero(libro.total_cajas)),
+      celda(precio(libro.precio_venta) || "-"),
       celda(libro.ultima_fecha_movimiento || "-")
     );
 
@@ -496,14 +504,16 @@ function renderFilaEdicion(tr, libro) {
     '<td><input id="edit-titulo" type="text" value="' + escaparHtml(editando.titulo) + '"></td>' +
     '<td><input id="edit-editorial" type="text" value="' + escaparHtml(editando.editorial) + '"></td>' +
     '<td><input id="edit-autor" type="text" value="' + escaparHtml(editando.autor || "") + '"></td>' +
-    '<td colspan="5"><button type="button" id="edit-guardar" class="btn-principal btn-pequeño">Guardar</button> ' +
+    '<td colspan="2"></td>' +
+    '<td><input id="edit-precio" type="number" min="0" step="0.01" placeholder="Precio" value="' + escaparHtml(editando.precio_venta ?? "") + '"></td>' +
+    '<td colspan="2"><button type="button" id="edit-guardar" class="btn-principal btn-pequeño">Guardar</button> ' +
     '<button type="button" id="edit-cancelar" class="btn-secundario btn-pequeño">Cancelar</button></td>';
   tr.querySelector("#edit-guardar").addEventListener("click", () => guardarEdicion(tr.dataset.editarIsbn));
   tr.querySelector("#edit-cancelar").addEventListener("click", () => { editando = null; cargarPanelActivo(); });
 }
 
 function iniciarEdicion(libro) {
-  editando = { isbn: libro.isbn, titulo: libro.titulo, editorial: libro.editorial, autor: libro.autor || "" };
+  editando = { isbn: libro.isbn, titulo: libro.titulo, editorial: libro.editorial, autor: libro.autor || "", precio_venta: libro.precio_venta };
   cargarPanelActivo();
 }
 
@@ -513,6 +523,8 @@ async function guardarEdicion(isbn) {
     editorial: valor("#edit-editorial"),
     autor: valor("#edit-autor"),
   };
+  const nuevoPrecio = valor("#edit-precio");
+  if (nuevoPrecio !== "") datos.precio_venta = nuevoPrecio;
   try {
     const r = await api("/api/inventario/" + encodeURIComponent(isbn), { method: "PUT", body: datos });
     toast("Libro actualizado: " + r.titulo, false);
@@ -670,8 +682,12 @@ function mostrarSeccion(id) {
 $all(".menu-btn").forEach((b) => b.addEventListener("click", () => mostrarSeccion(b.dataset.panel)));
 
 /* ------------------------------ Inicio ------------------------------ */
+$("#btn-cerrar-sesion").addEventListener("click", () => cerrarSesion());
 api("/api/info")
-  .then((info) => { $("#ip-local").textContent = info.ip + ":" + info.port; })
+  .then((info) => {
+    $("#ip-local").textContent = info.ip + ":" + info.port;
+    if (info.usuario) $("#usuario-actual").textContent = info.usuario;
+  })
   .catch(() => {});
 
 // Solo se carga el panel inicial; el resto se carga al visitarlo (M10).
@@ -691,20 +707,22 @@ async function buscarFichaLibro() {
     const h = (t2, txt) => { const d = document.createElement("div"); d.className = "ficha-fila"; const l = document.createElement("b"); l.textContent = t2; d.append(l, document.createTextNode(txt)); T.append(d); };
     h("Título:", libro.titulo); h("Editorial:", libro.editorial); h("Autor:", libro.autor || "Sin autor registrado");
     h("Stock actual:", libro.stock_actual + " libros"); h("Cajas totales:", libro.total_cajas + " cajas");
-    h("Precio de venta:", libro.precio_venta != null && libro.precio_venta !== "" ? String(libro.precio_venta) + " pesos" : "Sin precio registrado");
+    h("Precio de venta:", libro.precio_venta != null ? precio(libro.precio_venta) : "Sin precio registrado");
     h("Última llegada:", (r.ultima_entrada ? (r.ultima_entrada.fecha + " | " + r.ultima_entrada.cantidad + " libros, " + (r.ultima_entrada.cajas || "0") + " cajas") : "Sin llegadas registradas"));
     h("Última salida:", (r.ultima_salida ? (r.ultima_salida.fecha + " | " + r.ultima_salida.cantidad + " libros") : "Sin salidas registradas"));
   } catch (err) { $("#ficha-resultado").textContent = err.message; }
 }
 $("#ficha-buscar").addEventListener("click", () => buscarFichaLibro());
 
-/* ------------------------------ Calculadora del total en salida ------------------------------ */
+/* ------------------------------ Total de la venta (salida) ------------------------------ */
 function calcTotalVenta() {
-  const precio = parseFloat($("#salida-precio-venta").value || "0");
+  const destino = $("#total-venta");
+  if (!libroSalida) { destino.textContent = ""; return; }
+  if (libroSalida.precio_venta == null) { destino.textContent = "Este libro no tiene precio de venta registrado."; return; }
   const cant = parseInt($("#salida-cantidad").value || "0", 10);
-  if (!precio) { $("#total-venta").textContent = "Este libro no tiene precio de venta registrado"; return; }
-  const total = precio * cant;
-  $("#total-venta").textContent = "Total: " + total.toFixed(2) + " pesos";
+  if (!cant || cant < 1) { destino.textContent = "Precio unitario: " + precio(libroSalida.precio_venta); return; }
+  // Cálculo en centavos para evitar errores de redondeo.
+  const centavos = Math.round(Number(libroSalida.precio_venta) * 100) * cant;
+  destino.textContent = "Total de la venta: " + precio(centavos / 100);
 }
-$("#btn-calcular-total").addEventListener("click", () => { $("#total-venta").textContent = ""; calcTotalVenta(); });
 $("#salida-cantidad").addEventListener("input", () => calcTotalVenta());

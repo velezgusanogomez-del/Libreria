@@ -21,7 +21,10 @@
     <button class="menu-btn" data-panel="historial">Historial</button>
     <button class="menu-btn" data-panel="consultar-libro">Consultar libro</button>
   </nav>
-  <div class="ip-footer">Librería · uso local / WiFi</div>
+  <div class="ip-footer">
+    <span id="usuario-actual"></span>
+    <button type="button" class="btn-secundario btn-pequeño" id="btn-cerrar-sesion">Cerrar sesión</button>
+  </div>
 </header>
 
 <main class="main">
@@ -83,7 +86,10 @@
       <div class="field">
         <label for="llegada-cajas">Cantidad de cajas que llegaron</label>
         <input type="number" id="llegada-cajas" name="cajas" required min="1" placeholder="Ej: 2">
-      <div class="field"><label for="llegada-precio-venta">Precio de venta (opcional)</label><input type="number" id="llegada-precio-venta" name="precio_venta" min="0" placeholder="Ej: 150.50"></div>
+      </div>
+      <div class="field">
+        <label for="llegada-precio-venta">Precio de venta (opcional)</label>
+        <input type="number" id="llegada-precio-venta" name="precio_venta" min="0" step="0.01" placeholder="Ej: 150.50">
       </div>
       <div class="field">
         <label for="llegada-fecha">Fecha</label>
@@ -146,6 +152,7 @@
         <label for="salida-nota">Nota (opcional)</label>
         <input type="text" id="salida-nota" name="nota" placeholder="Ej: Venta cliente X">
       </div>
+      <p id="total-venta" class="field col2 total-venta" aria-live="polite"></p>
       <div class="field col2 form-actions">
         <button type="submit" class="btn-principal">Registrar salida</button>
         <button type="button" class="btn-secundario" id="salida-limpiar">Limpiar formulario</button>
@@ -191,7 +198,7 @@
         <thead>
           <tr>
             <th>ISBN</th><th>Título</th><th>Editorial</th><th>Autor</th>
-            <th>Stock actual</th><th>Total de cajas</th><th>Última fecha de movimiento</th><th>Acciones</th>
+            <th>Stock actual</th><th>Total de cajas</th><th>Precio</th><th>Última fecha de movimiento</th><th>Acciones</th>
           </tr>
         </thead>
         <tbody id="tabla-inventario-tbody"></tbody>
@@ -247,7 +254,7 @@
 
 <section id="consultar-libro" class="panel">
     <div class="panel-cabecera"><div><h2 class="panel-title">Consultar libro (Ficha)</h2><p class="panel-subtitulo">Busca cualquier libro por ISBN para ver su ficha completa</p></div></div>
-    <div class="field" style="max-width: 32rem; margin: 0 auto 2rem;"><label for="ficha-isbn">ISBN del libro</label><input type="text" id="ficha-isbn" placeholder="Ej: 978-84-7776-042-2"><button type="button" class="btn-principal" id="ficha-buscar">Buscar libro</button></div>
+    <div class="field ficha-buscador"><label for="ficha-isbn">ISBN del libro</label><input type="text" id="ficha-isbn" placeholder="Ej: 978-84-7776-042-2"><button type="button" class="btn-principal" id="ficha-buscar">Buscar libro</button></div>
     <div id="ficha-buscar-isbn"></div><div id="ficha-resultado"></div>
   </section></main>
 

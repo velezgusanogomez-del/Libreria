@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Librería - Iniciar sesión</title>
+<link rel="stylesheet" href="/estilos.css">
+</head>
+<body>
+<main class="login-pagina">
+  <form class="login-caja" method="post" action="/login">
+    <h1><img src="img/logo-libreria.svg" alt="" class="logo-img">Librería</h1>
+    <p class="subtitulo">Inventario de libros · Inicia sesión para continuar</p>
+    <p id="login-mensaje" class="login-mensaje" role="alert"></p>
+    <input type="hidden" name="_csrf" id="login-csrf">
+    <div class="field">
+      <label for="username">Usuario</label>
+      <input type="text" id="username" name="username" autocomplete="username" required autofocus>
+    </div>
+    <div class="field">
+      <label for="password">Contraseña</label>
+      <input type="password" id="password" name="password" autocomplete="current-password" required>
+    </div>
+    <button type="submit" class="btn-principal">Entrar</button>
+  </form>
+</main>
+<script src="/login.js"></script>
+</body>
+</html>

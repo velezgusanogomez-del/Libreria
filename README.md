@@ -1,191 +1,142 @@
 # Librero - Inventario de libros
 
 Sistema de inventario para una librería: registro de llegadas y salidas de libros,
-inventario con buscador y orden, historial de movimientos, panel de totales y
-exportación a CSV. Base de datos real: SQLite.
-
-## Libros de ejemplo (base de datos inicial)
-
-La base de datos se crea automáticamente con 2 libros de ejemplo:
-
-1. **El retrato de Dorian Gray** — Editorial: Sudamericana — Autor: Oscar Wilde — Stock: 8 — Cajas: 2
-2. **El principito** — Editorial: Alianza Editorial — Autor: Antoine de Saint-Exupéry — Stock: 3 — Cajas: 1
-
-El libro de ejemplo 2 (El principito) tiene stock menor a 5, así se ve el aviso de poco stock en el inventario.
-
-> Nota: la base de datos real (`base-de-datos/librero.db`) puede contener
-> más libros registrados (no solo los libros de ejemplo). Los libros de ejemplo
-> incluyen sus movimientos ENTRADA iniciales para que el histórico concuerde con
-> el stock sembrado.
+inventario con buscador y orden, precios de venta, historial de movimientos, panel de
+totales y exportación a CSV. Acceso con usuario y contraseña, también desde otras
+computadoras de la misma red WiFi.
 
 ## Tecnologías
 
-- **Backend**: Java 17+ (OpenJDK 27 en este equipo), Java SE API, `java.net.http.HttpServer`
-  (servidor HTTP local) y la librería `sqlite-jdbc` para la base de datos real.
-- **Frontend**: HTML, CSS y JavaScript (sin librerías externas), con diseño formal
-  en tonos azules y claros: azul marino, azul institucional, gris azulado y blanco.
-- **Base de datos**: SQLite — archivo `base-de-datos/librero.db`. Esquema:
-  `base-de-datos/esquema.sql` (crea las tablas `libros` y `movimientos`).
-
-## Estructura de la carpeta
-
-```
-Librero/
-- README.md
-- Ejecutar Librero.bat              (Windows)
-- Ejecutar Librero.sh               (Linux/Mac)
-- pom.xml
-- src/main/java/com/librero/
-  - LibreroApplication.java          (arranque: servidor + base de datos)
-  - modelo/Libro.java                (entidad libro: isbn, titulo, editorial, autor, stock_actual, total_cajas, fecha_creacion, activo, vendidos_acumulados)
-  - modelo/Movimiento.java           (entidad movimiento: id, isbn, tipo, cantidad, cajas, fecha, hora, nota)
-  - repositorio/LibroRepositorio.java     (acceso a la tabla libros)
-  - repositorio/MovimientoRepositorio.java (acceso a la tabla movimientos)
-  - controlador/LibreroControlador.java    (recibe peticiones HTTP, respuesta JSON)
-  - servicio/LibreroServicio.java         (lógica de negocio)
-- src/main/resources/
-  - application.properties
-  - static/index.html
-  - static/estilos.css
-  - static/app.js
-- base-de-datos/
-  - librero.db
-  - esquema.sql
-- target/                           (compilación de Maven: classes + libs)
-```
+- **Backend**: Java 17+, Spring Boot 3.5 (Web, JDBC, Validation, Security).
+- **Base de datos**: SQLite, en el archivo `base-de-datos/librero.db` (se crea solo).
+- **Frontend**: HTML, CSS y JavaScript sin librerías externas.
 
 ## Cómo ejecutar
 
-### Windows
+Requisitos: Java 17 o superior y Maven.
 
-Doble clic en: `Ejecutar Librero.bat`
+- **Windows**: doble clic en `Ejecutar Librero.bat`.
+- **Linux/Mac**: `sh "Ejecutar Librero.sh"`.
 
-### Linux/Mac
+El script compila el proyecto, inicia el servidor en **http://localhost:8080** y abre el
+navegador.
+
+### Primer arranque: contraseña
+
+La primera vez, Librero genera una contraseña aleatoria y la muestra **una sola vez** en
+la consola:
+
+```
+  PRIMER ARRANQUE: se generó una contraseña de acceso.
+    Usuario:    admin
+    Contraseña: ZJQEGRAmQcxA
+```
+
+Anótela. Para elegir otra contraseña (o si se perdió), inicie Librero con la variable de
+entorno `LIBRERO_PASSWORD`. Esa contraseña queda guardada (solo su hash BCrypt) para los
+siguientes arranques:
+
+```bat
+:: Windows (cmd)
+set LIBRERO_PASSWORD=mi-clave-segura
+"Ejecutar Librero.bat"
+```
 
 ```sh
-cd "/home/arch_gv/Desktop/Librero"
-sh "Ejecutar Librero.sh"
+# Linux/Mac
+LIBRERO_PASSWORD=mi-clave-segura sh "Ejecutar Librero.sh"
 ```
 
-Ambos scripts hacen todo automáticamente: verifican Java y Maven, compilan con Maven
-(`mvn -DskipTests package`), inician el servidor en el puerto 8080 y abren el navegador.
+### Configuración (variables de entorno)
 
-El servidor se queda corriendo: abre tu navegador en **http://localhost:8080**.
-
-### Token de acceso (G5)
-
-Por defecto no hace falta token. Si quieres limitar quién puede usar la API a
-nadie que conozca la IP de tu red WiFi, pon `LIBRERO_TOKEN` como variable de
-entorno antes de ejecutar `Ejecutar Librero.sh` / `Ejecutar Librero.bat` (o al
-arrancar con Maven):
-
-```sh
-LIBRERO_TOKEN=mi-secreto sh "Ejecutar Librero.sh"
-```
-
-Todos los endpoints `/api/...` exigen la cabecera `X-Librero-Token` con ese
-valor. La interfaz web pide el token al entrar (se guarda en `localStorage` del
-navegador; si caduca, se pide de nuevo). No guardes el token real en los
-archivos:
-
-```sh
-export LIBRERO_TOKEN=mi-secreto   # mantenlo solo en tu entorno de ejecución
-```
-
-### Cambiar el puerto (O7)
-
-Si el puerto 8080 está ocupado:
-
-```sh
-LIBRERO_PORT=8081 sh "Ejecutar Librero.sh"   # ejecuta en http://localhost:8081
-```
-
-O directamente: `mvn -Dserver.port=8081 package` /
-`java -Dserver.port=8081 -cp target/classes:target/libs/* com.librero.LibreroApplication`.
-
-### Abrirlo desde otra computadora en la misma red WiFi
-
-Pon la IP local de esta computadora (que aparece en la consola al arrancar el servidor
-y en el pie de la página) en el navegador de la otra computadora, por ejemplo:
-
-```
-http://192.168.1.23:8080
-```
-
-Ejemplo real de la IP local en esta computadora: `http://192.168.100.15:8080`.
-
-## Cómo funciona (UI)
-
-1. **Registrar llegada** (`Registrar llegada`): ISBN (obligatorio, único), nombre del
-   libro, editorial (obligatorias), autor (opcional), cantidad de libros que llegaron
-   (obligatoria), cajas que llegaron (obligatorio), fecha (selector), hora (selector),
-   nota (opcional). Si el ISBN ya existe, suma la cantidad al stock actual y las cajas
-   al total de cajas; si no existe, crea el libro. Guarda un movimiento de tipo ENTRADA.
-
-2. **Registrar salida / venta** (`Registrar salida`): ISBN (obligatorio; botón
-   "Buscar libro" muestra título, editorial y stock actual), cantidad que se vendió
-   (obligatoria), fecha, hora, nota. Resta el stock; **no permite quedar en negativo**
-   (si se intentan vender más de los que hay, muestra un error con el stock disponible).
-   Guarda un movimiento de tipo SALIDA.
-
-3. **Inventario** (`Inventario`): tabla de libros con ISBN, título, editorial, autor,
-   stock actual, total de cajas, última fecha de movimiento y botones de edición y
-   eliminación. Filtros: buscar por ISBN, por título y por editorial; orden: primero
-   los que tienen menos stock. Los libros con poco stock (< 5) tienen fila resaltada
-   con un badge. Eliminar un libro es un **borrado lógico** (`activo=0`): desaparece del
-   inventario pero **conserva sus movimientos y sus ventas acumuladas** en el histórico.
-
-4. **Historial** (`Historial`): tabla de movimientos (fecha, hora, ISBN, título, tipo
-   ENTRADA o SALIDA, cantidad, cajas para entradas, nota), más recientes primero.
-   Filtros por ISBN, tipo y rango de fechas.
-
-5. **Panel** (`Panel`): tarjetas con los totales reales de la base de datos:
-   - Total de libros diferentes registrados
-   - Total de libros en stock (suma de todos)
-   - Total de cajas que han llegado
-   - Total de libros vendidos (suma de salidas)
-   - Libros con poco stock
-   Y botones para exportar el inventario y el historial a CSV.
-
-## API (REST)
-
-El servidor expone una API simple que la interfaz usa:
-
-| Método | Path | Descripción |
+| Variable | Por defecto | Para qué |
 |---|---|---|
-| GET | `/` | Interfaz web |
-| GET | `/api/info` | Devuelve `{ip, port}` (IP local para entrar desde otra computadora) |
+| `LIBRERO_PORT` | `8080` | Puerto HTTP |
+| `LIBRERO_DATOS` | `base-de-datos` | Carpeta donde se guarda `librero.db` |
+| `LIBRERO_USUARIO` | `admin` | Nombre de usuario |
+| `LIBRERO_PASSWORD` | *(generada)* | Contraseña (ver arriba) |
+| `LIBRERO_ABRIR_NAVEGADOR` | `true` | `false` para no abrir el navegador al iniciar |
+
+El umbral de "poco stock" se cambia en `src/main/resources/application.properties`
+(`librero.umbral-poco-stock`).
+
+### Desde otra computadora de la misma red
+
+La consola y el pie de la página muestran la IP local, por ejemplo
+`http://192.168.1.23:8080`. Ábrala en el navegador de la otra computadora e inicie sesión.
+
+> La conexión es HTTP sin cifrar: úsela solo en una red de confianza (la WiFi de la
+> tienda con contraseña). No exponga el puerto a internet.
+
+## Estructura
+
+```
+src/main/java/com/librero/
+  LibreroApplication.java         arranque de Spring Boot
+  config/
+    SeguridadConfig.java          login, CSRF, cabeceras de seguridad
+    CredencialesServicio.java     usuario/contraseña (hash BCrypt en la tabla metadata)
+    IntentosLogin.java            bloqueo de 5 min tras 5 intentos fallidos por IP
+    LimiteCuerpoFiltro.java       rechaza peticiones de más de 64 KB
+    BaseDeDatosInicializador.java esquema, migraciones y datos de ejemplo
+    AlIniciar.java                muestra la IP y abre el navegador
+  controlador/
+    LibreroControlador.java       API REST (/api/...)
+    ManejadorErrores.java         errores -> JSON {"ok": false, "error": "..."}
+  servicio/LibreroServicio.java   lógica de negocio (transaccional)
+  repositorio/                    acceso a SQLite con JdbcTemplate
+  modelo/, dto/                   registros de datos
+src/main/resources/
+  application.properties
+  db/esquema.sql, db/datos-ejemplo.sql
+  static/                         interfaz web (index.html, login.html, app.js, estilos.css)
+src/test/java/com/librero/        pruebas (servicio + seguridad/API con MockMvc)
+```
+
+## Funciones
+
+1. **Registrar llegada**: ISBN, título y editorial (obligatorios para libros nuevos), autor,
+   cantidad, cajas, precio de venta (opcional), fecha, hora y nota. Si el ISBN ya existe,
+   suma stock y cajas (y reactiva el libro si estaba eliminado).
+2. **Registrar salida (venta)**: busca el libro, muestra precio y total de la venta, y resta
+   el stock. **Nunca deja el stock en negativo**, ni con ventas simultáneas.
+3. **Inventario**: filtros por ISBN, título y editorial; orden por stock; edición de
+   título, editorial, autor y precio; eliminación lógica (conserva el historial y las ventas).
+4. **Historial**: movimientos con filtros por tipo, ISBN y rango de fechas.
+5. **Consultar libro**: ficha con datos, precio, última llegada y última venta.
+6. **Panel**: totales y libros con poco stock; exportación a CSV (compatible con Excel).
+
+## API
+
+Todas las rutas `/api/...` exigen sesión iniciada (si no hay sesión, responden 401). Las
+peticiones que modifican datos exigen además la cabecera `X-XSRF-TOKEN` con el valor de la
+cookie `XSRF-TOKEN`.
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| GET | `/api/info` | IP local, puerto y usuario actual |
 | GET | `/api/dashboard` | Totales del panel |
-| POST | `/api/llegada` | Registra llegada de libros |
-| POST | `/api/salida` | Registra salida / venta |
-| GET | `/api/inventario?q_isbn=&q_titulo=&q_editorial=&orden=` | Lista libros con filtros y orden |
-| GET | `/api/inventario/{isbn}` | Busca un libro por ISBN (título, editorial, stock actual) |
-| PUT | `/api/inventario/{isbn}` | Edita título, editorial y/o autor |
-| DELETE | `/api/inventario/{isbn}` | Elimina el libro (borrado lógico activo=0; los movimientos del historial se conservan) |
-| GET | `/api/movimientos?tipo=&isbn=&desde=&hasta=` | Historial de movimientos con filtros |
-| GET | `/api/libros/sugerir?q=` | Sugiere ISBNs/títulos para el buscador de salida |
-| GET | `/api/exportar/inventario.csv` | CSV del inventario (descarga) |
-| GET | `/api/exportar/movimientos.csv` | CSV del historial de movimientos (descarga) |
+| POST | `/api/llegada` | Registra una llegada |
+| POST | `/api/salida` | Registra una venta |
+| GET | `/api/inventario?q_isbn=&q_titulo=&q_editorial=&orden=` | Libros activos |
+| GET / PUT / DELETE | `/api/inventario/{isbn}` | Ver / editar / eliminar un libro |
+| GET | `/api/movimientos?tipo=&isbn=&desde=&hasta=` | Historial |
+| GET | `/api/libros/sugerir?q=` | Autocompletado |
+| GET | `/api/libros/{isbn}/ficha` | Ficha del libro |
+| GET | `/api/exportar/inventario.csv`, `/api/exportar/movimientos.csv` | Descargas CSV |
 
-## Solución de problemas
+## Pruebas
 
-- **Puerto 8080 ocupado**: verifica que otra instancia de Librero no se esté ejecutando
-  (el propio servidor de memorias del proyecto anterior se movió a `OPENWEBUI_PORT`).
-- **Errores al compilar**: ejecuta `mvn -DskipTests package` y revisa el log (`mvn.log`).
-- **`target/` no existe o está vacío**: ejecuta `Ejecutar Librero.sh`/`.bat` (compila automáticamente).
-- **`target/` estático o viejo**: `target/` y `target/libs/` son salida de la compilación
-  con Maven: se regeneran con `mvn package`; puedes borrar `target/` a gana (el
-  proyecto se vuelve a compilar).
-- **Cambiar el umbral de "poco stock"**: edita `librero.umbral.poco-stock` en
-  `src/main/resources/application.properties`.
+```sh
+mvn test
+```
 
-## Verificación (pruebas realizadas)
+## Actualizar desde la versión 1
 
-- Llegada de libro nuevo → stock y cajas guardados en la DB.
-- Llegada de libro existente → stock y cajas sumados.
-- Venta → stock restado, movimiento SALIDA guardado; no se puede vender más que el stock.
-- Historial ordenado más reciente primero, con filtros por tipo, ISBN y fechas.
-- Panel de totales correcto frente a la base de datos (totales reales).
-- Exportación de inventario y movimientos a CSV correcta.
-- Eliminación de libro = borrado lógico (`activo=0`): conserva movimientos y ventas acumuladas.
-- Validación de entradas con mensajes claros (ISBN, fechas, horas, cantidades).
+La base de datos existente se migra sola al iniciar: el precio pasa de `REAL` a centavos
+(`precio_venta_centavos`) y se elimina un índice redundante. **Haga una copia de
+`base-de-datos/librero.db` antes del primer arranque**, por precaución. El antiguo
+`LIBRERO_TOKEN` ya no se usa: ahora se accede con usuario y contraseña.
+
+La base de datos ya **no se guarda en git** (`.gitignore`): contiene datos reales del
+negocio. Haga sus copias de seguridad aparte.
