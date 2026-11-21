@@ -56,7 +56,7 @@ public class SeguridadConfig {
 
         http
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/login.html", "/login.js", "/estilos.css", "/img/**",
+                        .requestMatchers("/login.html", "/login.js", "/tema.js", "/estilos.css", "/img/**",
                                 "/favicon.ico", "/error").permitAll()
                         .anyRequest().authenticated())
                 .formLogin(form -> form

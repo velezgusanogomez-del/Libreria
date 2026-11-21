@@ -32,8 +32,9 @@ import java.net.InetAddress;
 import java.net.NetworkInterface;
 import java.net.SocketException;
 import java.nio.charset.StandardCharsets;
-import java.util.Enumeration;
+import java.util.Collections;
 import java.util.List;
+import java.util.regex.Pattern;
 
 /** API JSON de Librero. Todas las rutas exigen sesión iniciada (ver SeguridadConfig). */
 @RestController
@@ -132,26 +133,38 @@ public class LibreroControlador {
                 .body(cuerpo);
     }
 
-    /** Primera IPv4 que no sea loopback, para mostrar cómo entrar desde otra computadora. */
+    /** Adaptadores de máquinas virtuales/contenedores: su IP no sirve para entrar desde la WiFi. */
+    private static final Pattern ADAPTADOR_VIRTUAL = Pattern.compile(
+            "(?i)virtualbox|vmware|hyper-v|vethernet|wsl|docker|vbox|loopback|tailscale|zerotier|tap-|tun");
+
+    /**
+     * IPv4 de la red local para entrar desde otra computadora. Prefiere direcciones privadas
+     * (192.168.x, 10.x, 172.16-31.x) de adaptadores físicos y descarta los virtuales.
+     */
     public static String ipLocal() {
+        String respaldo = null;
         try {
-            Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
-            while (interfaces != null && interfaces.hasMoreElements()) {
-                NetworkInterface ni = interfaces.nextElement();
-                if (!ni.isUp() || ni.isVirtual()) {
+            for (NetworkInterface ni : Collections.list(NetworkInterface.getNetworkInterfaces())) {
+                if (!ni.isUp() || ni.isLoopback() || ni.isVirtual()) {
                     continue;
                 }
-                Enumeration<InetAddress> direcciones = ni.getInetAddresses();
-                while (direcciones.hasMoreElements()) {
-                    InetAddress d = direcciones.nextElement();
-                    if (!d.isLoopbackAddress() && d instanceof Inet4Address) {
+                String nombre = ni.getName() + " " + ni.getDisplayName();
+                boolean virtual = ADAPTADOR_VIRTUAL.matcher(nombre).find();
+                for (InetAddress d : Collections.list(ni.getInetAddresses())) {
+                    if (!(d instanceof Inet4Address) || d.isLoopbackAddress() || d.isLinkLocalAddress()) {
+                        continue;
+                    }
+                    if (!virtual && d.isSiteLocalAddress()) {
                         return d.getHostAddress();
+                    }
+                    if (respaldo == null) {
+                        respaldo = d.getHostAddress();
                     }
                 }
             }
         } catch (SocketException ignorada) {
             // Sin interfaces de red: se usa loopback.
         }
-        return "127.0.0.1";
+        return respaldo != null ? respaldo : "127.0.0.1";
     }
 }

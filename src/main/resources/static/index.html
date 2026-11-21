@@ -3,266 +3,370 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Librería - Inventario de libros</title>
+<title>Librería · Inventario</title>
+<link rel="icon" href="/img/logo-libreria.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/estilos.css">
+<script src="/tema.js"></script>
 </head>
 <body>
 
-<header class="app-header">
-  <div class="marca">
-    <h1 class="logo"><img src="img/logo-libreria.svg" alt="" class="logo-img">Librería</h1>
-    <p class="subtitulo">Inventario y movimientos de libros</p>
-  </div>
-  <nav class="menu" aria-label="Navegación principal">
-    <button class="menu-btn activo" data-panel="panel">Panel</button>
-    <button class="menu-btn" data-panel="registrar-llegada">Registrar llegada</button>
-    <button class="menu-btn" data-panel="registrar-salida">Registrar salida</button>
-    <button class="menu-btn" data-panel="inventario">Inventario</button>
-    <button class="menu-btn" data-panel="historial">Historial</button>
-    <button class="menu-btn" data-panel="consultar-libro">Consultar libro</button>
-  </nav>
-  <div class="ip-footer">
-    <span id="usuario-actual"></span>
-    <button type="button" class="btn-secundario btn-pequeño" id="btn-cerrar-sesion">Cerrar sesión</button>
-  </div>
-</header>
+<div class="app">
 
-<main class="main">
-
-  <!-- Panel principal: totales reales de la base de datos -->
-  <section id="panel" class="panel activa">
-    <div class="panel-cabecera">
+  <!-- ============================== Barra lateral ============================== -->
+  <aside class="sidebar">
+    <div class="marca">
+      <span class="marca-logo"><svg class="icono"><use href="/img/iconos.svg#logo"/></svg></span>
       <div>
-        <h2 class="panel-title">Panel principal</h2>
-        <p class="panel-subtitulo">Indicadores en tiempo real del inventario</p>
-      </div>
-      <div class="toolbar" role="toolbar" aria-label="Exportación de datos">
-        <button class="btn-principal" id="btn-exportar-inventario">Exportar inventario (CSV)</button>
-        <button class="btn-secundario" id="btn-exportar-movimientos">Exportar historial (CSV)</button>
+        <h1 class="marca-nombre">Librería</h1>
+        <p class="marca-sub">Inventario de libros</p>
       </div>
     </div>
 
-    <div class="cards" id="cards"></div>
+    <nav class="menu" aria-label="Navegación principal">
+      <p class="menu-titulo">General</p>
+      <button class="menu-btn activo" data-panel="panel">
+        <svg class="icono"><use href="/img/iconos.svg#panel"/></svg><span>Panel</span>
+      </button>
+      <p class="menu-titulo">Movimientos</p>
+      <button class="menu-btn" data-panel="registrar-llegada">
+        <svg class="icono"><use href="/img/iconos.svg#llegada"/></svg><span>Registrar llegada</span>
+      </button>
+      <button class="menu-btn" data-panel="registrar-salida">
+        <svg class="icono"><use href="/img/iconos.svg#salida"/></svg><span>Registrar venta</span>
+      </button>
+      <p class="menu-titulo">Consultas</p>
+      <button class="menu-btn" data-panel="inventario">
+        <svg class="icono"><use href="/img/iconos.svg#inventario"/></svg><span>Inventario</span>
+      </button>
+      <button class="menu-btn" data-panel="historial">
+        <svg class="icono"><use href="/img/iconos.svg#historial"/></svg><span>Historial</span>
+      </button>
+      <button class="menu-btn" data-panel="consultar-libro">
+        <svg class="icono"><use href="/img/iconos.svg#buscar"/></svg><span>Consultar libro</span>
+      </button>
+    </nav>
 
-    <div class="cards">
-      <div class="card card-ancho">
-        <h3>Libros con poco stock</h3>
+    <div class="sidebar-pie">
+      <div class="sesion">
+        <span class="avatar"><svg class="icono"><use href="/img/iconos.svg#usuario"/></svg></span>
+        <div class="sesion-datos">
+          <span id="usuario-actual" class="sesion-nombre">—</span>
+          <span class="sesion-rol">Administrador</span>
+        </div>
+      </div>
+      <div class="sidebar-acciones">
+        <button type="button" class="btn-icono" id="btn-tema" title="Cambiar tema claro/oscuro" aria-label="Cambiar tema claro/oscuro">
+          <svg class="icono icono-luna"><use href="/img/iconos.svg#luna"/></svg>
+          <svg class="icono icono-sol"><use href="/img/iconos.svg#sol"/></svg>
+        </button>
+        <button type="button" class="btn-icono" id="btn-cerrar-sesion" title="Cerrar sesión" aria-label="Cerrar sesión">
+          <svg class="icono"><use href="/img/iconos.svg#salir"/></svg>
+        </button>
+      </div>
+      <div class="sesion-red" title="Dirección para entrar desde otra computadora de la red">
+        <svg class="icono"><use href="/img/iconos.svg#red"/></svg><span id="ip-local">cargando...</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ============================== Contenido ============================== -->
+  <main class="main">
+
+    <!-- Panel principal -->
+    <section id="panel" class="panel activa">
+      <header class="pagina-cabecera">
+        <div>
+          <h2 class="pagina-titulo">Panel principal</h2>
+          <p class="pagina-sub">Resumen del inventario en tiempo real</p>
+        </div>
+        <div class="toolbar" role="toolbar" aria-label="Exportación de datos">
+          <button class="btn-secundario" id="btn-exportar-inventario">
+            <svg class="icono"><use href="/img/iconos.svg#descargar"/></svg>Inventario CSV
+          </button>
+          <button class="btn-secundario" id="btn-exportar-movimientos">
+            <svg class="icono"><use href="/img/iconos.svg#descargar"/></svg>Historial CSV
+          </button>
+        </div>
+      </header>
+
+      <div class="cards" id="cards"></div>
+
+      <div class="tarjeta">
+        <div class="tarjeta-cabecera">
+          <h3 class="tarjeta-titulo">
+            <svg class="icono icono-peligro"><use href="/img/iconos.svg#alerta"/></svg>Libros con poco stock
+          </h3>
+          <button type="button" class="btn-texto" data-ir="inventario">Ver inventario</button>
+        </div>
         <div id="lista-poco-stock"><span class="mutado">Cargando...</span></div>
       </div>
-    </div>
-  </section>
+    </section>
 
-  <!-- Registrar llegada de libros -->
-  <section id="registrar-llegada" class="panel">
-    <div class="panel-cabecera">
-      <div>
-        <h2 class="panel-title">Registrar llegada</h2>
-        <p class="panel-subtitulo">Alta de libros o incremento de stock y cajas</p>
-      </div>
-    </div>
-    <form class="form-grid" id="forma-llegada">
-      <div class="field col2">
-        <label for="llegada-isbn">ISBN (obligatorio)</label>
-        <input type="text" id="llegada-isbn" name="isbn" required placeholder="Ej: 978-84-7776-042-2">
-        <div id="llegada-stock-info" class="llegada-stock-info mutado"></div>
-        <div id="sugerencias-llegada" class="sugerencias" role="listbox" aria-label="Sugerencias de libros"></div>
-      </div>
-      <div class="field col2">
-        <label for="llegada-titulo">Nombre del libro / título (obligatorio)</label>
-        <input type="text" id="llegada-titulo" name="titulo" required placeholder="Ej: El principito">
-      </div>
-      <div class="field col2">
-        <label for="llegada-editorial">Editorial (obligatoria)</label>
-        <input type="text" id="llegada-editorial" name="editorial" required placeholder="Ej: Alianza Editorial">
-      </div>
-      <div class="field col2">
-        <label for="llegada-autor">Autor (opcional)</label>
-        <input type="text" id="llegada-autor" name="autor" placeholder="Ej: Antoine de Saint-Exupéry">
-      </div>
-      <div class="field">
-        <label for="llegada-cantidad">Cantidad de libros que llegaron</label>
-        <input type="number" id="llegada-cantidad" name="cantidad" required min="1" placeholder="Ej: 25">
-      </div>
-      <div class="field">
-        <label for="llegada-cajas">Cantidad de cajas que llegaron</label>
-        <input type="number" id="llegada-cajas" name="cajas" required min="1" placeholder="Ej: 2">
-      </div>
-      <div class="field">
-        <label for="llegada-precio-venta">Precio de venta (opcional)</label>
-        <input type="number" id="llegada-precio-venta" name="precio_venta" min="0" step="0.01" placeholder="Ej: 150.50">
-      </div>
-      <div class="field">
-        <label for="llegada-fecha">Fecha</label>
-        <input type="date" id="llegada-fecha" name="fecha" required>
-      </div>
-      <div class="field">
-        <label for="llegada-hora">Hora (opcional)</label>
-        <input type="time" id="llegada-hora" name="hora">
-      </div>
-      <div class="field col2">
-        <label for="llegada-nota">Nota (opcional)</label>
-        <input type="text" id="llegada-nota" name="nota" placeholder="Ej: Recibido con defecto">
-      </div>
-      <div class="field col2 form-actions">
-        <button type="submit" class="btn-principal">Registrar llegada</button>
-        <button type="button" class="btn-secundario" id="llegada-limpiar">Limpiar formulario</button>
-      </div>
-    </form>
-  </section>
+    <!-- Registrar llegada -->
+    <section id="registrar-llegada" class="panel">
+      <header class="pagina-cabecera">
+        <div>
+          <h2 class="pagina-titulo">Registrar llegada</h2>
+          <p class="pagina-sub">Da de alta un libro nuevo o suma stock a uno existente</p>
+        </div>
+      </header>
 
-  <!-- Registrar salida / venta -->
-  <section id="registrar-salida" class="panel">
-    <div class="panel-cabecera">
-      <div>
-        <h2 class="panel-title">Registrar salida (venta)</h2>
-        <p class="panel-subtitulo">Busca el libro y registra la venta sin saldo negativo</p>
-      </div>
-    </div>
+      <form class="tarjeta" id="forma-llegada" novalidate>
+        <fieldset class="grupo">
+          <legend class="grupo-titulo"><span class="paso">1</span>Datos del libro</legend>
+          <div class="form-grid">
+            <div class="field col-2 con-sugerencias">
+              <label for="llegada-isbn">ISBN <span class="req">*</span></label>
+              <input type="text" id="llegada-isbn" name="isbn" required autocomplete="off" placeholder="Escribe el ISBN; si ya existe, se autocompletan los datos">
+              <div id="llegada-stock-info" class="ayuda llegada-stock-info"></div>
+              <div id="sugerencias-llegada" class="sugerencias" role="listbox" aria-label="Sugerencias de libros"></div>
+            </div>
+            <div class="field col-2">
+              <label for="llegada-titulo">Título <span class="req">*</span></label>
+              <input type="text" id="llegada-titulo" name="titulo" required placeholder="Ej: El principito">
+            </div>
+            <div class="field">
+              <label for="llegada-editorial">Editorial <span class="req">*</span></label>
+              <input type="text" id="llegada-editorial" name="editorial" required placeholder="Ej: Alianza Editorial">
+            </div>
+            <div class="field">
+              <label for="llegada-autor">Autor</label>
+              <input type="text" id="llegada-autor" name="autor" placeholder="Opcional">
+            </div>
+          </div>
+        </fieldset>
 
-    <div class="buscador">
-      <div class="buscador-cabecera">
-        <span class="etiqueta-seccion">1 · Buscar libro</span>
-      </div>
-      <div class="buscador-fila">
-        <label class="label-buscar" for="salida-isbn">ISBN o título</label>
-        <input type="text" id="salida-isbn" placeholder="Escribe un ISBN o parte del título..." autocomplete="off">
-        <button type="button" class="btn-secundario" id="btn-buscar-libro">Buscar libro</button>
-      </div>
-      <div id="sugerencias-salida" class="sugerencias" role="listbox" aria-label="Sugerencias de libros"></div>
-      <div id="datos-libro" class="datos-libro mutado">Selecciona un libro para ver su título, editorial y stock actual.</div>
-    </div>
+        <fieldset class="grupo">
+          <legend class="grupo-titulo"><span class="paso">2</span>Datos de la llegada</legend>
+          <div class="form-grid cols-3">
+            <div class="field">
+              <label for="llegada-cantidad">Libros recibidos <span class="req">*</span></label>
+              <input type="number" id="llegada-cantidad" name="cantidad" required min="1" inputmode="numeric" placeholder="Ej: 25">
+            </div>
+            <div class="field">
+              <label for="llegada-cajas">Cajas recibidas <span class="req">*</span></label>
+              <input type="number" id="llegada-cajas" name="cajas" required min="1" inputmode="numeric" placeholder="Ej: 2">
+            </div>
+            <div class="field">
+              <label for="llegada-precio-venta">Precio de venta</label>
+              <div class="input-prefijo">
+                <span>$</span>
+                <input type="number" id="llegada-precio-venta" name="precio_venta" min="0" step="0.01" inputmode="decimal" placeholder="0.00">
+              </div>
+            </div>
+            <div class="field">
+              <label for="llegada-fecha">Fecha <span class="req">*</span></label>
+              <input type="date" id="llegada-fecha" name="fecha" required>
+            </div>
+            <div class="field">
+              <label for="llegada-hora">Hora</label>
+              <input type="time" id="llegada-hora" name="hora">
+            </div>
+            <div class="field">
+              <label for="llegada-nota">Nota</label>
+              <input type="text" id="llegada-nota" name="nota" maxlength="500" placeholder="Ej: Recibido con defecto">
+            </div>
+          </div>
+        </fieldset>
 
-    <div class="buscador-cabecera segunda">
-      <span class="etiqueta-seccion">2 · Datos de la salida</span>
-    </div>
-    <form class="form-grid" id="forma-salida">
-      <div class="field">
-        <label for="salida-cantidad">Cantidad que salió / se vendió</label>
-        <input type="number" id="salida-cantidad" name="cantidad" required min="1" placeholder="Ej: 10">
-      </div>
-      <div class="field">
-        <label for="salida-fecha">Fecha de salida</label>
-        <input type="date" id="salida-fecha" name="fecha" required>
-      </div>
-      <div class="field">
-        <label for="salida-hora">Hora de salida (opcional)</label>
-        <input type="time" id="salida-hora" name="hora">
-      </div>
-      <div class="field">
-        <label for="salida-nota">Nota (opcional)</label>
-        <input type="text" id="salida-nota" name="nota" placeholder="Ej: Venta cliente X">
-      </div>
-      <p id="total-venta" class="field col2 total-venta" aria-live="polite"></p>
-      <div class="field col2 form-actions">
-        <button type="submit" class="btn-principal">Registrar salida</button>
-        <button type="button" class="btn-secundario" id="salida-limpiar">Limpiar formulario</button>
-      </div>
-    </form>
-    <p class="hint-small">El stock no puede quedar en negativo; si no hay suficientes libros, no se registra la venta.</p>
-  </section>
+        <div class="form-actions">
+          <button type="button" class="btn-secundario" id="llegada-limpiar">Limpiar</button>
+          <button type="submit" class="btn-principal">
+            <svg class="icono"><use href="/img/iconos.svg#check"/></svg>Registrar llegada
+          </button>
+        </div>
+      </form>
+    </section>
 
-  <!-- Inventario -->
-  <section id="inventario" class="panel">
-    <div class="panel-cabecera">
-      <div>
-        <h2 class="panel-title">Inventario</h2>
-        <p class="panel-subtitulo">Libros activos con stock, cajas y último movimiento</p>
+    <!-- Registrar salida / venta -->
+    <section id="registrar-salida" class="panel">
+      <header class="pagina-cabecera">
+        <div>
+          <h2 class="pagina-titulo">Registrar venta</h2>
+          <p class="pagina-sub">Busca el libro y registra la salida; el stock nunca queda en negativo</p>
+        </div>
+      </header>
+
+      <div class="venta-layout">
+        <div class="tarjeta">
+          <h3 class="grupo-titulo"><span class="paso">1</span>Buscar libro</h3>
+          <div class="buscador con-sugerencias">
+            <div class="input-icono">
+              <svg class="icono"><use href="/img/iconos.svg#buscar"/></svg>
+              <input type="text" id="salida-isbn" placeholder="ISBN o parte del título..." autocomplete="off" aria-label="ISBN o título">
+            </div>
+            <button type="button" class="btn-secundario" id="btn-buscar-libro">Buscar</button>
+            <div id="sugerencias-salida" class="sugerencias" role="listbox" aria-label="Sugerencias de libros"></div>
+          </div>
+          <div id="datos-libro" class="datos-libro mutado">Selecciona un libro para ver su título, editorial, stock y precio.</div>
+        </div>
+
+        <form class="tarjeta" id="forma-salida" novalidate>
+          <h3 class="grupo-titulo"><span class="paso">2</span>Datos de la venta</h3>
+          <div class="form-grid">
+            <div class="field">
+              <label for="salida-cantidad">Cantidad vendida <span class="req">*</span></label>
+              <input type="number" id="salida-cantidad" name="cantidad" required min="1" inputmode="numeric" placeholder="Ej: 2">
+            </div>
+            <div class="field">
+              <label for="salida-fecha">Fecha <span class="req">*</span></label>
+              <input type="date" id="salida-fecha" name="fecha" required>
+            </div>
+            <div class="field">
+              <label for="salida-hora">Hora</label>
+              <input type="time" id="salida-hora" name="hora">
+            </div>
+            <div class="field">
+              <label for="salida-nota">Nota</label>
+              <input type="text" id="salida-nota" name="nota" maxlength="500" placeholder="Ej: Venta cliente X">
+            </div>
+          </div>
+          <p id="total-venta" class="total-venta" aria-live="polite"></p>
+          <div class="form-actions">
+            <button type="button" class="btn-secundario" id="salida-limpiar">Limpiar</button>
+            <button type="submit" class="btn-principal">
+              <svg class="icono"><use href="/img/iconos.svg#check"/></svg>Registrar venta
+            </button>
+          </div>
+        </form>
       </div>
-    </div>
-    <div class="filtros">
-      <div class="filtro-grupo">
-        <span class="etiqueta-seccion">Búsqueda</span>
-        <div class="filtro-fila">
-          <label class="label-buscar" for="inv-isbn">ISBN</label>
-          <input type="text" id="inv-isbn" class="filtro" placeholder="ISBN">
-          <label class="label-buscar" for="inv-titulo">Título</label>
-          <input type="text" id="inv-titulo" class="filtro" placeholder="Título">
-          <label class="label-buscar" for="inv-editorial">Editorial</label>
-          <input type="text" id="inv-editorial" class="filtro" placeholder="Editorial">
+    </section>
+
+    <!-- Inventario -->
+    <section id="inventario" class="panel">
+      <header class="pagina-cabecera">
+        <div>
+          <h2 class="pagina-titulo">Inventario</h2>
+          <p class="pagina-sub">Libros activos con su stock, cajas, precio y último movimiento</p>
+        </div>
+      </header>
+
+      <div class="tarjeta tarjeta-tabla">
+        <div class="filtros">
+          <div class="field">
+            <label for="inv-isbn">ISBN</label>
+            <input type="text" id="inv-isbn" class="filtro" placeholder="Buscar por ISBN">
+          </div>
+          <div class="field">
+            <label for="inv-titulo">Título</label>
+            <input type="text" id="inv-titulo" class="filtro" placeholder="Buscar por título">
+          </div>
+          <div class="field">
+            <label for="inv-editorial">Editorial</label>
+            <input type="text" id="inv-editorial" class="filtro" placeholder="Buscar por editorial">
+          </div>
+          <div class="field">
+            <label for="inv-orden">Orden</label>
+            <select id="inv-orden" class="filtro">
+              <option value="asc">Menor stock primero</option>
+              <option value="desc">Mayor stock primero</option>
+            </select>
+          </div>
+          <button class="btn-principal" id="btn-buscar-inventario">
+            <svg class="icono"><use href="/img/iconos.svg#buscar"/></svg>Buscar
+          </button>
+        </div>
+        <div class="tabla-wrapper">
+          <table class="tabla tabla-inventario">
+            <thead>
+              <tr>
+                <th>ISBN</th><th>Título</th><th>Editorial</th><th>Autor</th>
+                <th class="num">Stock</th><th class="num">Cajas</th><th class="num">Precio</th><th>Último mov.</th><th class="acciones">Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="tabla-inventario-tbody"></tbody>
+          </table>
         </div>
       </div>
-      <div class="filtro-grupo">
-        <span class="etiqueta-seccion">Orden y acción</span>
-        <div class="filtro-fila">
-          <label class="label-buscar" for="inv-orden">Orden</label>
-          <select id="inv-orden" class="filtro">
-            <option value="asc">Menor stock primero</option>
-            <option value="desc">Mayor stock primero</option>
-          </select>
-          <button class="btn-principal" id="btn-buscar-inventario">Buscar</button>
+    </section>
+
+    <!-- Historial -->
+    <section id="historial" class="panel">
+      <header class="pagina-cabecera">
+        <div>
+          <h2 class="pagina-titulo">Historial de movimientos</h2>
+          <p class="pagina-sub">Llegadas y ventas, de la más reciente a la más antigua</p>
+        </div>
+      </header>
+
+      <div class="tarjeta tarjeta-tabla">
+        <div class="filtros">
+          <div class="field">
+            <label for="his-tipo">Tipo</label>
+            <select id="his-tipo" class="filtro">
+              <option value="TODOS">Todos</option>
+              <option value="ENTRADA">Llegadas</option>
+              <option value="SALIDA">Ventas</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="his-isbn">ISBN</label>
+            <input type="text" id="his-isbn" class="filtro" placeholder="ISBN exacto">
+          </div>
+          <div class="field">
+            <label for="his-desde">Desde</label>
+            <input type="date" id="his-desde" class="filtro">
+          </div>
+          <div class="field">
+            <label for="his-hasta">Hasta</label>
+            <input type="date" id="his-hasta" class="filtro">
+          </div>
+          <button class="btn-principal" id="btn-buscar-historial">
+            <svg class="icono"><use href="/img/iconos.svg#buscar"/></svg>Buscar
+          </button>
+        </div>
+        <div class="tabla-wrapper">
+          <table class="tabla">
+            <thead>
+              <tr>
+                <th>Fecha</th><th>Hora</th><th>ISBN</th><th>Título</th><th>Tipo</th>
+                <th class="num">Cantidad</th><th class="num">Cajas</th><th>Nota</th>
+              </tr>
+            </thead>
+            <tbody id="tabla-historial-tbody"></tbody>
+          </table>
         </div>
       </div>
-    </div>
-    <div class="tabla-wrapper">
-      <table class="tabla">
-        <thead>
-          <tr>
-            <th>ISBN</th><th>Título</th><th>Editorial</th><th>Autor</th>
-            <th>Stock actual</th><th>Total de cajas</th><th>Precio</th><th>Última fecha de movimiento</th><th>Acciones</th>
-          </tr>
-        </thead>
-        <tbody id="tabla-inventario-tbody"></tbody>
-      </table>
-    </div>
-  </section>
+    </section>
 
-  <!-- Historial de movimientos -->
-  <section id="historial" class="panel">
-    <div class="panel-cabecera">
-      <div>
-        <h2 class="panel-title">Historial de movimientos</h2>
-        <p class="panel-subtitulo">Entradas y salidas, de la más reciente a la más antigua</p>
-      </div>
-    </div>
-    <div class="filtros">
-      <div class="filtro-grupo">
-        <span class="etiqueta-seccion">Tipo e ISBN</span>
-        <div class="filtro-fila">
-          <label class="label-buscar" for="his-tipo">Tipo</label>
-          <select id="his-tipo" class="filtro">
-            <option value="TODOS">Todos</option>
-            <option value="ENTRADA">Entradas</option>
-            <option value="SALIDA">Salidas</option>
-          </select>
-          <label class="label-buscar" for="his-isbn">ISBN</label>
-          <input type="text" id="his-isbn" class="filtro" placeholder="ISBN">
+    <!-- Consultar libro -->
+    <section id="consultar-libro" class="panel">
+      <header class="pagina-cabecera">
+        <div>
+          <h2 class="pagina-titulo">Consultar libro</h2>
+          <p class="pagina-sub">Ficha completa: datos, precio, última llegada y última venta</p>
         </div>
-      </div>
-      <div class="filtro-grupo">
-        <span class="etiqueta-seccion">Rango de fechas</span>
-        <div class="filtro-fila">
-          <label class="label-buscar" for="his-desde">Desde</label>
-          <input type="date" id="his-desde" class="filtro">
-          <label class="label-buscar" for="his-hasta">Hasta</label>
-          <input type="date" id="his-hasta" class="filtro">
-          <button class="btn-principal" id="btn-buscar-historial">Buscar</button>
+      </header>
+
+      <div class="tarjeta">
+        <div class="buscador">
+          <div class="input-icono">
+            <svg class="icono"><use href="/img/iconos.svg#buscar"/></svg>
+            <input type="text" id="ficha-isbn" placeholder="ISBN del libro, ej: 978-84-7776-042-2" aria-label="ISBN del libro">
+          </div>
+          <button type="button" class="btn-principal" id="ficha-buscar">Ver ficha</button>
         </div>
+        <div id="ficha-resultado" class="ficha"></div>
       </div>
+    </section>
+
+  </main>
+</div>
+
+<!-- Confirmación (reemplaza a window.confirm) -->
+<dialog id="dialogo-confirmar" class="dialogo">
+  <form method="dialog">
+    <div class="dialogo-icono"><svg class="icono"><use href="/img/iconos.svg#alerta"/></svg></div>
+    <h3 id="dialogo-titulo" class="dialogo-titulo">¿Confirmar?</h3>
+    <p id="dialogo-mensaje" class="dialogo-mensaje"></p>
+    <div class="dialogo-acciones">
+      <button value="no" class="btn-secundario">Cancelar</button>
+      <button value="si" class="btn-peligro" id="dialogo-aceptar">Eliminar</button>
     </div>
-    <div class="tabla-wrapper">
-      <table class="tabla">
-        <thead>
-          <tr>
-            <th>Fecha</th><th>Hora</th><th>ISBN</th><th>Título</th><th>Tipo</th>
-            <th>Cantidad</th><th>Cajas</th><th>Nota</th>
-          </tr>
-        </thead>
-        <tbody id="tabla-historial-tbody"></tbody>
-      </table>
-    </div>
-  </section>
+  </form>
+</dialog>
 
-<section id="consultar-libro" class="panel">
-    <div class="panel-cabecera"><div><h2 class="panel-title">Consultar libro (Ficha)</h2><p class="panel-subtitulo">Busca cualquier libro por ISBN para ver su ficha completa</p></div></div>
-    <div class="field ficha-buscador"><label for="ficha-isbn">ISBN del libro</label><input type="text" id="ficha-isbn" placeholder="Ej: 978-84-7776-042-2"><button type="button" class="btn-principal" id="ficha-buscar">Buscar libro</button></div>
-    <div id="ficha-buscar-isbn"></div><div id="ficha-resultado"></div>
-  </section></main>
-
-<div id="toast" class="toast"></div>
-
-<footer class="pie">
-  Librero — Inventario de libros · IP local: <span id="ip-local">cargando...</span>
-</footer>
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
 
 <script src="/app.js"></script>
 </body>
